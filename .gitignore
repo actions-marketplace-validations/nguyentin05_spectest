@@ -1,0 +1,30 @@
+# Build outputs
+/bin/
+/dist/
+/spectest
+*.exe
+
+# Test, coverage, and runtime artifacts
+/reports/
+*.test
+*.out
+coverage.html
+*.bak
+
+# Docs build
+/site/
+
+# Local environment & credentials
+.env
+.env.*
+!.env.example
+credentials.yaml
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor & OS files
+.idea/
+.vscode/
+.DS_Store
