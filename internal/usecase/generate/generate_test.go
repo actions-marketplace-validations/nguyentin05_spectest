@@ -3,10 +3,15 @@ package generate
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/nguyentin05/spectest/internal/domain"
 	"github.com/nguyentin05/spectest/internal/infrastructure/openapi"
@@ -552,4 +557,296 @@ func TestFindMatchingOp(t *testing.T) {
 			t.Error("expected not found, but found match")
 		}
 	})
+}
+
+const threeChunkOpenAPISpec = `openapi: 3.0.3
+info:
+  title: Three Domains API
+  version: 1.0.0
+servers:
+  - url: https://api.example.test
+paths:
+  /a:
+    get:
+      summary: A
+      tags: [Alpha]
+      responses:
+        '200': { description: OK }
+  /b:
+    get:
+      summary: B
+      tags: [Beta]
+      responses:
+        '200': { description: OK }
+  /c:
+    get:
+      summary: C
+      tags: [Gamma]
+      responses:
+        '200': { description: OK }
+`
+
+func newThreeChunkGenerator(t *testing.T, mock *mockLLMService) (*Generator, string) {
+	t.Helper()
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(specPath, []byte(threeChunkOpenAPISpec), 0600); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	return NewGenerator(mock, nil), specPath
+}
+
+func tagFromPrompt(prompt string) string {
+	const prefix = "Domain Tag: "
+	i := strings.Index(prompt, prefix)
+	if i < 0 {
+		return ""
+	}
+	s := prompt[i+len(prefix):]
+	if j := strings.IndexByte(s, '\n'); j >= 0 {
+		s = s[:j]
+	}
+	return strings.TrimSpace(s)
+}
+
+func minimalScenario(tag string) string {
+	return fmt.Sprintf(`{"id":"SCN_%s","name":"Scenario","steps":[{"id":"STEP_GET","name":"Step","request":{"method":"GET","endpoint":"/health"},"test_cases":[{"id":"TC_OK","name":"OK","type":"ai_business_valid","payload":{},"assert":{"status":200}}],"assert":{"status":200}}]}`, strings.ToUpper(tag))
+}
+
+func TestGenerator_Execute_ConcurrencyOneIsSequential(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	inFlight, maxInFlight := 0, 0
+
+	mock := &mockLLMService{generateFunc: func(ctx context.Context, sys, user string, _ interface{}) (string, error) {
+		tag := tagFromPrompt(user)
+		mu.Lock()
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		order = append(order, tag)
+		mu.Unlock()
+
+		time.Sleep(5 * time.Millisecond)
+
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return minimalScenario(tag), nil
+	}}
+
+	gen, specPath := newThreeChunkGenerator(t, mock)
+	if _, err := gen.Execute(context.Background(), Request{
+		APIPath:     specPath,
+		OutputDir:   filepath.Join(t.TempDir(), "out"),
+		Concurrency: 1,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if maxInFlight != 1 {
+		t.Errorf("maxInFlight = %d, want 1", maxInFlight)
+	}
+	if want := []string{"Alpha", "Beta", "Gamma"}; !reflect.DeepEqual(order, want) {
+		t.Errorf("order = %v, want %v", order, want)
+	}
+}
+
+func TestGenerator_Execute_ConcurrencyLimit(t *testing.T) {
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	inFlight, maxInFlight := 0, 0
+
+	mock := &mockLLMService{generateFunc: func(ctx context.Context, sys, user string, _ interface{}) (string, error) {
+		mu.Lock()
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		mu.Unlock()
+		started <- struct{}{}
+		<-release
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return minimalScenario(tagFromPrompt(user)), nil
+	}}
+
+	gen, specPath := newThreeChunkGenerator(t, mock)
+	outDir := filepath.Join(t.TempDir(), "out")
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := gen.Execute(context.Background(), Request{
+			APIPath:     specPath,
+			OutputDir:   outDir,
+			Concurrency: 2,
+		})
+		errCh <- err
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for two concurrent calls")
+		}
+	}
+
+	mu.Lock()
+	if maxInFlight != 2 {
+		t.Errorf("maxInFlight = %d, want 2", maxInFlight)
+	}
+	mu.Unlock()
+
+	select {
+	case <-started:
+		t.Fatal("third call started before release")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(release)
+	if err := <-errCh; err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestEffectiveConcurrency(t *testing.T) {
+	tests := []struct {
+		name              string
+		requested, chunks int
+		want              int
+	}{
+		{name: "clamp to chunks", requested: 99, chunks: 3, want: 3},
+		{name: "zero defaults to one", requested: 0, chunks: 3, want: 1},
+		{name: "negative defaults to one", requested: -1, chunks: 3, want: 1},
+		{name: "within range", requested: 2, chunks: 3, want: 2},
+		{name: "no chunks", requested: 4, chunks: 0, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveConcurrency(tt.requested, tt.chunks); got != tt.want {
+				t.Errorf("effectiveConcurrency(%d, %d) = %d, want %d", tt.requested, tt.chunks, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerator_Execute_ClampsConcurrencyToChunkCount(t *testing.T) {
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+
+	mock := &mockLLMService{generateFunc: func(ctx context.Context, sys, user string, _ interface{}) (string, error) {
+		started <- struct{}{}
+		<-release
+		return minimalScenario(tagFromPrompt(user)), nil
+	}}
+
+	gen, specPath := newThreeChunkGenerator(t, mock)
+	outDir := filepath.Join(t.TempDir(), "out")
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := gen.Execute(context.Background(), Request{
+			APIPath:     specPath,
+			OutputDir:   outDir,
+			Concurrency: 99,
+		})
+		errCh <- err
+	}()
+
+	for i := 0; i < 3; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for start %d", i+1)
+		}
+	}
+
+	close(release)
+	if err := <-errCh; err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestGenerator_Execute_CancelsRemainingOnError(t *testing.T) {
+	var calls atomic.Int64
+	mock := &mockLLMService{generateFunc: func(ctx context.Context, sys, user string, _ interface{}) (string, error) {
+		calls.Add(1)
+		return "", fmt.Errorf("boom %s", tagFromPrompt(user))
+	}}
+
+	gen, specPath := newThreeChunkGenerator(t, mock)
+	_, err := gen.Execute(context.Background(), Request{
+		APIPath:     specPath,
+		OutputDir:   filepath.Join(t.TempDir(), "out"),
+		Concurrency: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "Alpha") {
+		t.Fatalf("error = %v, want Alpha failure", err)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestGenerator_Execute_JoinsConcurrentErrors(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+
+	mock := &mockLLMService{generateFunc: func(ctx context.Context, sys, user string, _ interface{}) (string, error) {
+		started <- struct{}{}
+		<-release
+		return "", fmt.Errorf("boom %s", tagFromPrompt(user))
+	}}
+
+	gen, specPath := newThreeChunkGenerator(t, mock)
+	outDir := filepath.Join(t.TempDir(), "out")
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := gen.Execute(context.Background(), Request{
+			APIPath:     specPath,
+			OutputDir:   outDir,
+			Concurrency: 2,
+		})
+		errCh <- err
+	}()
+
+	<-started
+	<-started
+	close(release)
+
+	err := <-errCh
+	if err == nil {
+		t.Fatal("expected joined error")
+	}
+	for _, want := range []string{"Alpha", "Beta"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err, want)
+		}
+	}
+}
+
+func TestGenerator_Execute_ContextCanceledBeforeStart(t *testing.T) {
+	mock := &mockLLMService{generateFunc: func(ctx context.Context, sys, user string, _ interface{}) (string, error) {
+		return minimalScenario(tagFromPrompt(user)), nil
+	}}
+
+	gen, specPath := newThreeChunkGenerator(t, mock)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := gen.Execute(ctx, Request{
+		APIPath:     specPath,
+		OutputDir:   filepath.Join(t.TempDir(), "out"),
+		Concurrency: 2,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if mock.generateCallHits.Load() != 0 {
+		t.Errorf("LLM calls = %d, want 0", mock.generateCallHits.Load())
+	}
 }
