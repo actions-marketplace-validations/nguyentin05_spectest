@@ -3,10 +3,13 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNewClient_NormalizesEndpoint(t *testing.T) {
@@ -157,5 +160,192 @@ func TestTruncateStr(t *testing.T) {
 	}
 	if got := truncateStr("abcdef", 3); got != "abc..." {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestClient_GenerateStructured_RetriesOn429(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`rate limited`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"id\":\"SC\"}"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("p", srv.URL, "", "m")
+	c.sleep = func(context.Context, time.Duration) error { return nil }
+
+	out, err := c.GenerateStructured(context.Background(), "s", "u", nil)
+	if err != nil {
+		t.Fatalf("GenerateStructured: %v", err)
+	}
+	if out != `{"id":"SC"}` {
+		t.Errorf("output = %q", out)
+	}
+	if calls.Load() != 2 {
+		t.Errorf("calls = %d, want 2", calls.Load())
+	}
+}
+
+func TestClient_GenerateStructured_RetriesOn5xxUntilExhausted(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`server error`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("p", srv.URL, "", "m")
+	c.sleep = func(context.Context, time.Duration) error { return nil }
+
+	_, err := c.GenerateStructured(context.Background(), "s", "u", nil)
+	if err == nil || !strings.Contains(err.Error(), "llm status 500") {
+		t.Fatalf("error = %v, want llm status 500", err)
+	}
+	if calls.Load() != 3 {
+		t.Errorf("calls = %d, want 3", calls.Load())
+	}
+}
+
+func TestClient_GenerateStructured_DoesNotRetry4xx(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`invalid api key`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("p", srv.URL, "", "m")
+	c.sleep = func(context.Context, time.Duration) error { return nil }
+
+	_, err := c.GenerateStructured(context.Background(), "s", "u", nil)
+	if err == nil || !strings.Contains(err.Error(), "llm status 401") {
+		t.Fatalf("error = %v, want llm status 401", err)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestClient_GenerateStructured_RespectsRetryAfter(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "2")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("p", srv.URL, "", "m")
+	var gotDelay time.Duration
+	c.sleep = func(_ context.Context, d time.Duration) error {
+		gotDelay = d
+		return nil
+	}
+
+	if _, err := c.GenerateStructured(context.Background(), "s", "u", nil); err != nil {
+		t.Fatalf("GenerateStructured: %v", err)
+	}
+	if gotDelay != 2*time.Second {
+		t.Errorf("sleep delay = %v, want 2s", gotDelay)
+	}
+}
+
+func TestClient_GenerateStructured_StopsOnCanceledContext(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	c := NewClient("p", srv.URL, "", "m")
+	c.sleep = func(ctx context.Context, _ time.Duration) error {
+		cancel()
+		return ctx.Err()
+	}
+
+	_, err := c.GenerateStructured(ctx, "s", "u", nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1", calls.Load())
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestClient_GenerateStructured_RetriesOnAttemptTimeout(t *testing.T) {
+	var calls atomic.Int64
+	c := NewClient("p", "http://example.test", "", "m")
+	c.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})}
+	c.timeout = 10 * time.Millisecond
+	c.sleep = func(context.Context, time.Duration) error { return nil }
+
+	_, err := c.GenerateStructured(context.Background(), "s", "u", nil)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if calls.Load() != 3 {
+		t.Errorf("calls = %d, want 3", calls.Load())
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	future := time.Now().Add(3 * time.Second).UTC().Format(http.TimeFormat)
+	tests := []struct {
+		name string
+		in   string
+		want time.Duration
+		ok   func(time.Duration) bool
+	}{
+		{name: "seconds", in: "2", want: 2 * time.Second, ok: func(d time.Duration) bool { return d == 2*time.Second }},
+		{name: "zero", in: "0", want: 0, ok: func(d time.Duration) bool { return d == 0 }},
+		{name: "negative", in: "-1", want: 0, ok: func(d time.Duration) bool { return d == 0 }},
+		{name: "empty", in: "", want: 0, ok: func(d time.Duration) bool { return d == 0 }},
+		{name: "garbage", in: "soon", want: 0, ok: func(d time.Duration) bool { return d == 0 }},
+		{name: "capped", in: "1000000000", want: maxRetryAfter, ok: func(d time.Duration) bool { return d == maxRetryAfter }},
+		{name: "http date", in: future, want: 0, ok: func(d time.Duration) bool { return d > 0 && d <= 4*time.Second }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseRetryAfter(tt.in)
+			if !tt.ok(got) {
+				t.Errorf("parseRetryAfter(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBackoffDelay(t *testing.T) {
+	if got := backoffDelay(1, 45*time.Second); got != maxRetryAfter {
+		t.Errorf("cap = %v, want %v", got, maxRetryAfter)
+	}
+	if got := backoffDelay(1, 2*time.Second); got != 2*time.Second {
+		t.Errorf("retry-after = %v, want 2s", got)
+	}
+	for _, attempt := range []int{1, 2, 3} {
+		base := baseBackoff << (attempt - 1)
+		got := backoffDelay(attempt, 0)
+		if got < base*3/4 || got > base*5/4 {
+			t.Errorf("backoffDelay(%d, 0) = %v, want within [%v, %v]", attempt, got, base*3/4, base*5/4)
+		}
 	}
 }

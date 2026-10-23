@@ -8,9 +8,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	defaultTimeout = 120 * time.Second
+	maxAttempts    = 3
+	baseBackoff    = 500 * time.Millisecond
+	maxBackoff     = 8 * time.Second
+	maxRetryAfter  = 30 * time.Second
 )
 
 // Client implements domain.LLMService using the standard HTTP `/v1/chat/completions`
@@ -21,6 +32,8 @@ type Client struct {
 	apiKey     string
 	model      string
 	httpClient *http.Client
+	timeout    time.Duration
+	sleep      func(context.Context, time.Duration) error
 }
 
 // NewClient constructs a unified LLM Client for the given provider identifier,
@@ -36,7 +49,9 @@ func NewClient(provider, endpoint, apiKey, model string) *Client {
 		endpoint:   ep,
 		apiKey:     strings.TrimSpace(apiKey),
 		model:      strings.TrimSpace(model),
-		httpClient: &http.Client{Timeout: 45 * time.Second},
+		httpClient: &http.Client{},
+		timeout:    defaultTimeout,
+		sleep:      sleepContext,
 	}
 }
 
@@ -48,12 +63,40 @@ func (c *Client) Name() string {
 // GenerateStructured dispatches a low-temperature (`0.1`) chat completion request
 // containing the system instruction and user prompt to `<endpoint>/chat/completions`,
 // strips surrounding Markdown code fences if present, and returns the raw JSON string.
+// Transient failures (408/429/5xx, network errors, per-attempt timeouts) are retried
+// with exponential backoff up to maxAttempts.
 func (c *Client) GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, _ interface{}) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		raw, retryable, retryAfter, err := c.doRequest(ctx, systemPrompt, userPrompt)
+		if err == nil {
+			return raw, nil
+		}
+		lastErr = err
+		if !retryable || attempt == maxAttempts {
+			break
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		delay := backoffDelay(attempt, retryAfter)
+		slog.Debug("retrying llm request", "attempt", attempt, "delay", delay.String(), "error", err)
+		if err := c.sleep(ctx, delay); err != nil {
+			return "", err
+		}
+	}
+	return "", lastErr
+}
+
+// doRequest performs a single chat completion attempt bounded by c.timeout.
+// It reports whether the failure is worth retrying and, for HTTP status errors,
+// the server-requested Retry-After delay.
+func (c *Client) doRequest(ctx context.Context, systemPrompt, userPrompt string) (raw string, retryable bool, retryAfter time.Duration, err error) {
 	if c.endpoint == "" {
-		return "", fmt.Errorf("endpoint is not configured for provider %q", c.provider)
+		return "", false, 0, fmt.Errorf("endpoint is not configured for provider %q", c.provider)
 	}
 	if c.model == "" {
-		return "", fmt.Errorf("model is not configured for provider %q", c.provider)
+		return "", false, 0, fmt.Errorf("model is not configured for provider %q", c.provider)
 	}
 
 	url := c.endpoint + "/chat/completions"
@@ -69,12 +112,15 @@ func (c *Client) GenerateStructured(ctx context.Context, systemPrompt string, us
 
 	bodyBytes, err := json.Marshal(reqPayload)
 	if err != nil {
-		return "", err
+		return "", false, 0, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+	attemptCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return "", err
+		return "", false, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
@@ -83,13 +129,21 @@ func (c *Client) GenerateStructured(ctx context.Context, systemPrompt string, us
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("llm request to %s failed: %w", url, err)
+		return "", true, 0, fmt.Errorf("llm request to %s failed: %w", url, err)
 	}
 	defer resp.Body.Close()
 
-	respData, _ := io.ReadAll(resp.Body)
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", true, 0, fmt.Errorf("llm request to %s failed: %w", url, err)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("llm status %d: %s", resp.StatusCode, truncateStr(string(respData), 200))
+		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+		return "", isRetryableStatus(resp.StatusCode), retryAfter, &statusError{
+			Code:       resp.StatusCode,
+			Body:       string(respData),
+			RetryAfter: retryAfter,
+		}
 	}
 
 	var parsed struct {
@@ -100,13 +154,96 @@ func (c *Client) GenerateStructured(ctx context.Context, systemPrompt string, us
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(respData, &parsed); err != nil {
-		return "", fmt.Errorf("decode llm response: %w", err)
+		return "", false, 0, fmt.Errorf("decode llm response: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("empty response choices from %s", url)
+		return "", false, 0, fmt.Errorf("empty response choices from %s", url)
 	}
 
-	return cleanJSONFence(parsed.Choices[0].Message.Content), nil
+	return cleanJSONFence(parsed.Choices[0].Message.Content), false, 0, nil
+}
+
+// statusError describes a non-200 chat completion response.
+type statusError struct {
+	Code       int
+	Body       string
+	RetryAfter time.Duration
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("llm status %d: %s", e.Code, truncateStr(e.Body, 200))
+}
+
+// isRetryableStatus reports whether an HTTP status code represents a transient
+// failure worth retrying (408, 429, or 5xx gateway/server errors).
+func isRetryableStatus(code int) bool {
+	switch code {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests,
+		http.StatusInternalServerError, http.StatusBadGateway,
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
+
+// parseRetryAfter converts a Retry-After header value (delta-seconds or HTTP date)
+// into a duration, capped at maxRetryAfter. Invalid or past values yield 0.
+func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		if secs > int(maxRetryAfter/time.Second) {
+			return maxRetryAfter
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+// backoffDelay computes the delay before the next attempt: the server-provided
+// retryAfter (capped) when present, otherwise exponential backoff from baseBackoff
+// with +/-25% jitter, capped at maxBackoff.
+func backoffDelay(attempt int, retryAfter time.Duration) time.Duration {
+	if retryAfter > 0 {
+		if retryAfter > maxRetryAfter {
+			return maxRetryAfter
+		}
+		return retryAfter
+	}
+	d := baseBackoff << (attempt - 1)
+	if d > maxBackoff {
+		d = maxBackoff
+	}
+	jitterRange := d / 4
+	if jitterRange <= 0 {
+		return d
+	}
+	return d + time.Duration(rand.Int64N(int64(2*jitterRange))) - jitterRange
+}
+
+// sleepContext waits for d or until ctx is done, whichever comes first.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 // cleanJSONFence strips optional Markdown ```json or ``` fences wrapped around LLM output.
