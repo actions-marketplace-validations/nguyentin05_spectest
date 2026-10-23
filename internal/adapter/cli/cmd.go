@@ -3,9 +3,13 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/nguyentin05/spectest/internal/adapter/cli/cmdutil"
 	"github.com/nguyentin05/spectest/internal/adapter/cli/config"
@@ -62,11 +66,35 @@ runs multi-tier API assertions, and evolves tests when specifications change.`,
 	return spectestCmd
 }
 
-// Execute builds and runs the root command against os.Args. On failure it prints
-// "Error: <message>" to stderr and terminates the process with exit status 1.
+// Execute builds and runs the root command against os.Args with a signal-aware
+// context: SIGINT (Ctrl-C) or SIGTERM cancels in-flight work and the process
+// exits with status 130. Any other failure prints "Error: <message>" to stderr
+// and terminates the process with exit status 1.
 func Execute() {
-	if err := NewSpectestCmd().Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err := NewSpectestCmd().ExecuteContext(ctx)
+	switch exitCode(err) {
+	case 0:
+		return
+	case 130:
+		fmt.Fprintln(os.Stderr, "Canceled.")
+		os.Exit(130)
+	default:
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
+	}
+}
+
+// exitCode maps a command error to a process exit code.
+func exitCode(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, context.Canceled):
+		return 130
+	default:
+		return 1
 	}
 }
