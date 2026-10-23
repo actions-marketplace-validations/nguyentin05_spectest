@@ -87,7 +87,7 @@ func TestGenerateCmd_Help(t *testing.T) {
 	}
 
 	got := out.String()
-	for _, flag := range []string{"--api", "--req", "--output", "--export", "--enrich"} {
+	for _, flag := range []string{"--api", "--req", "--output", "--export", "--enrich", "--concurrency"} {
 		if !strings.Contains(got, flag) {
 			t.Errorf("expected help output to document flag %q, got:\n%s", flag, got)
 		}
@@ -107,6 +107,26 @@ func TestGenerateCmd_MissingAPIFlag(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--api (-a) is missing") {
 		t.Fatalf("expected missing --api flag error, got: %v", err)
+	}
+}
+
+func TestGenerateCmd_InvalidConcurrency(t *testing.T) {
+	for _, value := range []string{"0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			cleanEnv(t)
+			f := cmdutil.NewFactory()
+			cmd := NewCommand(f)
+
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{"-a", "spec.yaml", "--concurrency=" + value})
+
+			err := cmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), "--concurrency must be at least 1") {
+				t.Fatalf("error = %v, want --concurrency validation", err)
+			}
+		})
 	}
 }
 
@@ -200,6 +220,7 @@ func TestGenerateCmd_EndToEnd_Success(t *testing.T) {
 		"-o", outDir,
 		"-e", "postman",
 		"--enrich",
+		"-c", "2",
 	})
 
 	if err := cmd.Execute(); err != nil {
@@ -212,6 +233,7 @@ func TestGenerateCmd_EndToEnd_Success(t *testing.T) {
 		"Spec Pruning        :",
 		"Auth Detection      : Detected producer [POST /auth/login] -> wired Bearer token",
 		"Domain Chunks       :",
+		"Concurrency         : 2",
 		"Test Suite File     :",
 		"Coverage Matrix     :",
 		"Exported Collection :",
