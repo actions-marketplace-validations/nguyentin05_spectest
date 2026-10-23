@@ -2,6 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -76,5 +79,25 @@ func TestSpectestCmd_VerboseFlag(t *testing.T) {
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute with --verbose failed: %v", err)
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "nil", err: nil, want: 0},
+		{name: "canceled", err: context.Canceled, want: 130},
+		{name: "wrapped canceled", err: fmt.Errorf("wrapped: %w", context.Canceled), want: 130},
+		{name: "other", err: errors.New("boom"), want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := exitCode(tt.err); got != tt.want {
+				t.Errorf("exitCode(%v) = %d, want %d", tt.err, got, tt.want)
+			}
+		})
 	}
 }

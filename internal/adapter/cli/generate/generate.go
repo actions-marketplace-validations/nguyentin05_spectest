@@ -15,17 +15,18 @@ import (
 
 // options holds the parsed flag values for a single `spectest generate` invocation.
 type options struct {
-	apiPath   string
-	reqPath   string
-	outputDir string
-	exportFmt string
-	enrich    bool
+	apiPath     string
+	reqPath     string
+	outputDir   string
+	exportFmt   string
+	enrich      bool
+	concurrency int
 }
 
 // NewCommand creates the `spectest generate` subcommand and binds its flags:
 // `--api/-a` (required OpenAPI path), `--req/-r` (optional PRD path), `--output/-o`
 // (output directory, default ./tests), `--export/-e` (extra format such as postman),
-// and `--enrich`.
+// `--enrich`, and `--concurrency/-c` (parallel LLM requests, default 1).
 func NewCommand(f *cmdutil.Factory) *cobra.Command {
 	opts := &options{
 		outputDir: "./tests",
@@ -49,6 +50,8 @@ synthesize hybrid test datasets, and produce structured spectest.yaml and test_m
 	cmd.Flags().StringVarP(&opts.outputDir, "output", "o", opts.outputDir, "Output directory for generated test suites")
 	cmd.Flags().StringVarP(&opts.exportFmt, "export", "e", "", "Export additional formats (e.g. 'postman')")
 	cmd.Flags().BoolVar(&opts.enrich, "enrich", false, "Use AI to enrich missing descriptions in OpenAPI before generating")
+	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 1,
+		"Number of concurrent LLM requests (1 = sequential; try 4+ for cloud providers)")
 
 	return cmd
 }
@@ -58,6 +61,9 @@ synthesize hybrid test datasets, and produce structured spectest.yaml and test_m
 func runGenerate(ctx context.Context, out io.Writer, f *cmdutil.Factory, opts *options) error {
 	if strings.TrimSpace(opts.apiPath) == "" {
 		return fmt.Errorf("required flag --api (-a) is missing")
+	}
+	if opts.concurrency < 1 {
+		return fmt.Errorf("--concurrency must be at least 1")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -70,11 +76,12 @@ func runGenerate(ctx context.Context, out io.Writer, f *cmdutil.Factory, opts *o
 
 	gen := ucgenerate.NewGenerator(llmSvc, f.SuiteRepository())
 	res, err := gen.Execute(ctx, ucgenerate.Request{
-		APIPath:   opts.apiPath,
-		ReqPath:   opts.reqPath,
-		OutputDir: opts.outputDir,
-		ExportFmt: opts.exportFmt,
-		Enrich:    opts.enrich,
+		APIPath:     opts.apiPath,
+		ReqPath:     opts.reqPath,
+		OutputDir:   opts.outputDir,
+		ExportFmt:   opts.exportFmt,
+		Enrich:      opts.enrich,
+		Concurrency: opts.concurrency,
 	})
 	if err != nil {
 		return err
@@ -86,6 +93,7 @@ func runGenerate(ctx context.Context, out io.Writer, f *cmdutil.Factory, opts *o
 		fmt.Fprintf(out, "Auth Detection      : Detected producer [%s] -> wired Bearer token\n", res.AuthProducer)
 	}
 	fmt.Fprintf(out, "Domain Chunks       : %d processed\n", res.ChunksProcessed)
+	fmt.Fprintf(out, "Concurrency         : %d\n", opts.concurrency)
 	fmt.Fprintf(out, "Test Suite File     : %s\n", res.SuitePath)
 	fmt.Fprintf(out, "Coverage Matrix     : %s\n", res.MatrixPath)
 	if res.ExportPath != "" {

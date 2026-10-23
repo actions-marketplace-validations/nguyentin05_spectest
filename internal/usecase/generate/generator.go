@@ -5,7 +5,9 @@ package generate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +27,10 @@ type Request struct {
 	OutputDir string
 	ExportFmt string
 	Enrich    bool
+	// Concurrency caps the number of domain chunks processed in parallel by the
+	// LLM scenario synthesis stage. Values <= 0 default to 1, and values above
+	// the number of domain chunks are clamped to the chunk count.
+	Concurrency int
 }
 
 // Result contains the generated TestSuiteFile artifact, output file paths, and
@@ -100,7 +106,7 @@ func (g *Generator) Execute(ctx context.Context, req Request) (*Result, error) {
 		chunks[i].PRDSection = prd.MatchSectionToTag(prdSections, chunks[i].Tag)
 	}
 
-	scenarios, err := g.buildScenariosConcurrently(ctx, chunks)
+	scenarios, err := g.buildScenariosConcurrently(ctx, chunks, req.Concurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -155,37 +161,87 @@ func (g *Generator) Execute(ctx context.Context, req Request) (*Result, error) {
 	}, nil
 }
 
-// buildScenariosConcurrently dispatches one goroutine per DomainChunk to synthesize
-// scenarios in parallel and returns the first error encountered if any chunk fails.
-func (g *Generator) buildScenariosConcurrently(ctx context.Context, chunks []openapi.DomainChunk) ([]domain.Scenario, error) {
+// buildScenariosConcurrently synthesizes scenarios for domain chunks using a bounded worker
+// pool that runs at most `concurrency` chunks in parallel. Results keep deterministic order by
+// chunk index regardless of completion order. The first chunk error cancels all remaining work
+// (peers and queued jobs) and all concurrent errors are joined into a single error;
+// cancellation noise from peer workers is not surfaced.
+func (g *Generator) buildScenariosConcurrently(ctx context.Context, chunks []openapi.DomainChunk, concurrency int) ([]domain.Scenario, error) {
+	if len(chunks) == 0 {
+		return nil, nil
+	}
+	concurrency = effectiveConcurrency(concurrency, len(chunks))
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan int)
 	results := make([]domain.Scenario, len(chunks))
 	errs := make([]error, len(chunks))
+
 	var wg sync.WaitGroup
-
-	for i, chunk := range chunks {
-		wg.Add(1)
-		go func(idx int, ch openapi.DomainChunk) {
+	wg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
 			defer wg.Done()
-			ops := ch.Operations
-			if ch.TokenProducer != nil {
-				ops = append([]openapi.NormalizedOperation{*ch.TokenProducer}, ops...)
+			for idx := range jobs {
+				if runCtx.Err() != nil {
+					return
+				}
+				ch := chunks[idx]
+				ops := ch.Operations
+				if ch.TokenProducer != nil {
+					ops = append([]openapi.NormalizedOperation{*ch.TokenProducer}, ops...)
+				}
+				sc, err := g.generateChunkScenario(runCtx, ch.Tag, ops, ch.PRDSection)
+				if err != nil {
+					if runCtx.Err() != nil && errors.Is(err, context.Canceled) {
+						return
+					}
+					errs[idx] = fmt.Errorf("domain %q: %w", ch.Tag, err)
+					cancel()
+					return
+				}
+				results[idx] = sc
+				slog.Debug("chunk generated", "tag", ch.Tag, "index", idx+1, "total", len(chunks))
 			}
-			sc, err := g.generateChunkScenario(ctx, ch.Tag, ops, ch.PRDSection)
-			if err != nil {
-				errs[idx] = err
-				return
-			}
-			results[idx] = sc
-		}(i, chunk)
+		}()
 	}
-	wg.Wait()
 
-	for _, err := range errs {
-		if err != nil {
-			return nil, err
+feed:
+	for i := range chunks {
+		select {
+		case jobs <- i:
+		case <-runCtx.Done():
+			break feed
 		}
 	}
+	close(jobs)
+	wg.Wait()
+
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return results, nil
+}
+
+// effectiveConcurrency clamps the requested worker count between 1 and the number of
+// chunks: values <= 0 default to 1, and values above the chunk count are clamped to
+// the chunk count. When there are no chunks, it returns 0.
+func effectiveConcurrency(requested, chunks int) int {
+	if chunks <= 0 {
+		return 0
+	}
+	if requested < 1 {
+		requested = 1
+	}
+	if requested > chunks {
+		requested = chunks
+	}
+	return requested
 }
 
 // generateChunkScenario prompts the configured LLM with a single domain chunk's pruned
