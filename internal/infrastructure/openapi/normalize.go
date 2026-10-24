@@ -9,8 +9,8 @@ import (
 	"github.com/nguyentin05/spectest/internal/domain"
 )
 
-// normalizedOperation is the intermediate representation used before Task 6
-// computes the canonical API hash and compact signature. Security is retained
+// normalizedOperation is the intermediate representation used before the
+// canonical API hash and compact signature are computed. Security is retained
 // here because domain.API has no public security field; the hash covers it.
 type normalizedOperation struct {
 	Method      string
@@ -26,7 +26,9 @@ type normalizedOperation struct {
 // path and then method. The supplied server label is used only in the API key,
 // never as a base URL; spec `servers` blocks are ignored.
 //
-// Hash and Sig are deliberately empty in Task 5. Task 6 fills them.
+// Every operation is assigned its canonical Hash and compact Sig from the
+// normalized operation, including security, which is why the internal
+// normalizedOperation retains it.
 func Normalize(server string, raw []byte) ([]domain.API, error) {
 	operations, err := normalizeDocument(raw)
 	if err != nil {
@@ -40,6 +42,8 @@ func Normalize(server string, raw []byte) ([]domain.API, error) {
 			Server:      server,
 			Path:        operation.Path,
 			Description: operation.Description,
+			Hash:        apiHash(operation),
+			Sig:         buildSignature(operation),
 			Parameters:  operation.Parameters,
 			Request:     operation.Request,
 			Responses:   operation.Responses,
@@ -48,8 +52,8 @@ func Normalize(server string, raw []byte) ([]domain.API, error) {
 	return apis, nil
 }
 
-// normalizeDocument is the internal form of Normalize that keeps security for
-// hash and signature construction in Task 6.
+// normalizeDocument is the internal form of Normalize that keeps security so
+// the hash and signature can include it.
 func normalizeDocument(raw []byte) ([]normalizedOperation, error) {
 	parsed, err := parseSpec(raw)
 	if err != nil {
@@ -298,7 +302,7 @@ func normalizeMediaType(value string) string {
 
 // effectiveSecurity applies the OpenAPI override rule: an operation-level
 // `security` key, including an explicit empty list, replaces the document-level
-// list. The full requirement list is retained for Task 6's hash.
+// list. The full requirement list is retained so the hash can cover all scopes.
 func effectiveSecurity(operationSecurity, globalSecurity *[]securityRequirement) []securityRequirement {
 	source := globalSecurity
 	if operationSecurity != nil {

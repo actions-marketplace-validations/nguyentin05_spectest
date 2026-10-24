@@ -136,8 +136,11 @@ paths:
 		if apis[i].Server != "api" {
 			t.Errorf("apis[%d].Server = %q, want %q", i, apis[i].Server, "api")
 		}
-		if apis[i].Hash != "" || apis[i].Sig.Request != nil || apis[i].Sig.Responses != nil || apis[i].Sig.Auth != nil {
-			t.Errorf("apis[%d] Hash/Sig should be deferred to Task 6: %+v", i, apis[i])
+		if len(apis[i].Hash) != 12 || strings.ToLower(apis[i].Hash) != apis[i].Hash {
+			t.Errorf("apis[%d].Hash = %q, want 12 lowercase hex characters", i, apis[i].Hash)
+		}
+		if len(apis[i].Sig.Responses) != 1 {
+			t.Errorf("apis[%d].Sig.Responses = %v, want one status code", i, apis[i].Sig.Responses)
 		}
 	}
 	if got := apis[0].Path; got != "/a/{id}" {
