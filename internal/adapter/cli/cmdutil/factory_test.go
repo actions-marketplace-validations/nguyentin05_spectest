@@ -35,16 +35,6 @@ func TestFactory_InitializationAndSingletons(t *testing.T) {
 	if store1 != store2 {
 		t.Error("expected CredentialStore to return singleton instance")
 	}
-
-	// Test SuiteRepository singleton
-	repo1 := f.SuiteRepository()
-	if repo1 == nil {
-		t.Fatal("expected SuiteRepository to return non-nil instance")
-	}
-	repo2 := f.SuiteRepository()
-	if repo1 != repo2 {
-		t.Error("expected SuiteRepository to return singleton instance")
-	}
 }
 
 func TestFactory_LLMService_Resolution(t *testing.T) {
@@ -58,7 +48,7 @@ func TestFactory_LLMService_Resolution(t *testing.T) {
 		emptyStore := storage.NewFileCredentialStoreWithPath(
 			filepath.Join(tmpDir, "credentials.yaml"),
 		)
-		f := NewFactoryWith(emptyStore, nil)
+		f := NewFactoryWith(emptyStore)
 		_, err := f.LLMService()
 		if err == nil {
 			t.Fatal("expected LLMService to return error when provider is unconfigured")
