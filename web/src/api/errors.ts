@@ -9,3 +9,7 @@ export class ApiError extends Error {
     this.payload = payload;
   }
 }
+
+export function isMissingEndpoint(error: unknown): error is ApiError {
+  return error instanceof ApiError && [404, 405, 501].includes(error.status);
+}
