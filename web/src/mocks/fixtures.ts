@@ -243,6 +243,13 @@ export function createMarkdownFixtures(): Record<string, string> {
       "## 3. Accounts",
       "An admin account is seeded to create products before the suite runs.",
       "",
+      "## 4. Acceptance matrix",
+      "",
+      "| Requirement | Status |",
+      "| --- | --- |",
+      "| Unique email | Required |",
+      "| Stock check | Required |",
+      "",
     ].join("\n"),
   };
 }
