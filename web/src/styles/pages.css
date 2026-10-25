@@ -641,3 +641,125 @@
     margin-left: 0;
   }
 }
+
+.st-history__base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-2);
+}
+
+.st-history__label {
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+  font-weight: 500;
+}
+
+.st-history__muted {
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+}
+
+.st-history__hash {
+  font-size: var(--st-text-12);
+  overflow-wrap: anywhere;
+}
+
+.st-history__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-3);
+}
+
+.st-history__toolbar .st-search {
+  flex: 1;
+  min-width: 220px;
+}
+
+.st-history__empty {
+  padding: var(--st-space-4);
+  border: 1px dashed var(--st-line);
+  border-radius: var(--st-radius);
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-13);
+}
+
+.st-history__update {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  padding: var(--st-space-4);
+  border: 1px solid var(--st-line);
+  border-radius: var(--st-radius);
+  background: var(--st-surface);
+}
+
+.st-history__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-2);
+}
+
+.st-history__title {
+  font-size: var(--st-text-18);
+}
+
+.st-history__note {
+  font-size: var(--st-text-13);
+  font-weight: 500;
+}
+
+.st-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+}
+
+.st-history__meta code {
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+}
+
+.st-history__triggers,
+.st-history__created {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+}
+
+.st-history__trigger-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.st-history__change {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+  padding: var(--st-space-3);
+  border-radius: 8px;
+  background: var(--st-canvas);
+}
+
+.st-history__change-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-2);
+}
+
+.st-history__change-head code {
+  font-size: var(--st-text-12);
+  overflow-wrap: anywhere;
+}
+
+.st-history__reason {
+  font-size: var(--st-text-13);
+}
