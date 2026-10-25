@@ -1138,3 +1138,66 @@
   max-width: 100%;
   height: auto;
 }
+
+.st-settings__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+}
+
+.st-settings__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--st-space-4);
+}
+
+.st-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}
+
+.st-settings__message {
+  font-size: var(--st-text-12);
+}
+
+.st-settings__message--error {
+  color: var(--st-fail);
+}
+
+.st-settings__message--ok {
+  color: var(--st-pass);
+}
+
+.st-settings__healthcheck {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--st-space-3);
+}
+
+.st-settings__healthcheck .st-field {
+  flex: 1;
+  min-width: 260px;
+}
+
+.st-settings__health {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-2);
+  margin-top: var(--st-space-3);
+  font-size: var(--st-text-13);
+}
+
+.st-settings__health p {
+  flex-basis: 100%;
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+}
+
+@media (max-width: 720px) {
+  .st-settings__row {
+    grid-template-columns: 1fr;
+  }
+}
