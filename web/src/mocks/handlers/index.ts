@@ -5,6 +5,7 @@ import { historyHandlers } from "./history";
 import { logsHandlers } from "./logs";
 import { markdownHandlers } from "./markdown";
 import { probeHandlers } from "./probe";
+import { runHandlers } from "./run";
 import { suiteHandlers } from "./suite";
 import { workspaceHandlers } from "./workspace";
 
@@ -17,5 +18,6 @@ export const handlers = [
   ...historyHandlers,
   ...probeHandlers,
   ...generateHandlers,
+  ...runHandlers,
   ...markdownHandlers,
 ];

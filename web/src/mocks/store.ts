@@ -15,6 +15,16 @@ import {
   createWorkspaceFixture,
 } from "./fixtures";
 
+export type MockRun = {
+  id: string;
+  status: "running" | "completed" | "cancelled";
+  suitePath: string;
+  targetUrl: string;
+  startedAt: number;
+  events: RunStreamEvent[];
+  subscribers: Set<(event: RunStreamEvent) => void>;
+};
+
 export type MockState = {
   config: LLMConfig;
   workspace: WorkspaceItem[];
@@ -22,7 +32,7 @@ export type MockState = {
   history: HistoryResponse;
   markdown: Record<string, string>;
   logs: string[];
-  run: { id: string; status: "running" | "cancelled"; events: RunStreamEvent[] } | null;
+  run: MockRun | null;
   report: RunReport | null;
   runDelayMs: number;
 };
