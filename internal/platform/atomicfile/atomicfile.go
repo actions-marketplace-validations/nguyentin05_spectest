@@ -23,13 +23,13 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 	tmpName := tmp.Name()
 
 	if err := writeSyncClose(tmp, data, perm); err != nil {
-		tmp.Close() // best-effort; the error is already set
-		os.Remove(tmpName)
+		_ = tmp.Close() // best-effort; the error is already set
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("atomicfile: write %s: %w", path, err)
 	}
 
 	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("atomicfile: rename to %s: %w", path, err)
 	}
 	return nil

@@ -131,7 +131,7 @@ func (c *Client) doRequest(ctx context.Context, systemPrompt, userPrompt string)
 	if err != nil {
 		return "", true, 0, fmt.Errorf("llm request to %s failed: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respData, err := io.ReadAll(resp.Body)
 	if err != nil {

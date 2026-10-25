@@ -65,3 +65,8 @@ type SuiteStore interface {
 type Clock interface {
 	Now() time.Time
 }
+
+// ServerLifecycleManager controls startup, readiness verification, and teardown of test server environments.
+type ServerLifecycleManager interface {
+	Up(ctx context.Context) (teardown func(), err error)
+}

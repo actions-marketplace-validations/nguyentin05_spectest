@@ -6,15 +6,20 @@ package suitefile
 import (
 	"bytes"
 	"fmt"
+	"os"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/nguyentin05/spectest/internal/domain"
 )
 
-// decodeSuite decodes spectest.yaml strictly and enforces schema version 1.
+// DecodeSuite decodes spectest.yaml strictly and enforces schema version 1.
 // Legacy v1 files (metadata/base shape) and any unknown key are rejected rather
 // than migrated.
+func DecodeSuite(data []byte) (*domain.Suite, error) {
+	return decodeSuite(data)
+}
+
 func decodeSuite(data []byte) (*domain.Suite, error) {
 	var suite domain.Suite
 	if err := decodeStrict(data, &suite); err != nil {
@@ -26,8 +31,18 @@ func decodeSuite(data []byte) (*domain.Suite, error) {
 	return &suite, nil
 }
 
+// EncodeSuite encodes a Suite into strictly formatted YAML.
+func EncodeSuite(suite *domain.Suite) ([]byte, error) {
+	return encodeSuite(suite)
+}
+
 func encodeSuite(suite *domain.Suite) ([]byte, error) {
 	return encodeYAML(suite)
+}
+
+// DecodeLog decodes spectest.log.yaml strictly.
+func DecodeLog(data []byte) (*domain.LogFile, error) {
+	return decodeLog(data)
 }
 
 // decodeLog decodes spectest.log.yaml strictly.
@@ -39,8 +54,31 @@ func decodeLog(data []byte) (*domain.LogFile, error) {
 	return &log, nil
 }
 
+// EncodeLog encodes a LogFile into formatted YAML.
+func EncodeLog(log *domain.LogFile) ([]byte, error) {
+	return encodeLog(log)
+}
+
 func encodeLog(log *domain.LogFile) ([]byte, error) {
 	return encodeYAML(log)
+}
+
+// LoadSuite reads and strictly decodes a spectest.yaml file from path.
+func LoadSuite(path string) (*domain.Suite, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read suite %s: %w", path, err)
+	}
+	return decodeSuite(data)
+}
+
+// LoadLog reads and strictly decodes a spectest.log.yaml file from path.
+func LoadLog(path string) (*domain.LogFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read log %s: %w", path, err)
+	}
+	return decodeLog(data)
 }
 
 // decodeTrack decodes spectest.track.yaml strictly.
