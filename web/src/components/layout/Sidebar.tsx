@@ -12,9 +12,17 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/settings", label: "Cài đặt" },
 ];
 
-export function Sidebar() {
+type SidebarProps = {
+  open?: boolean;
+  onNavigate?: () => void;
+};
+
+export function Sidebar({ open = false, onNavigate }: SidebarProps = {}) {
   return (
-    <aside className="st-rail">
+    <aside
+      id="st-main-nav"
+      className={`st-rail ${open ? "is-open" : ""}`.trim()}
+    >
       <p className="st-brand">
         <span className="st-brand__mark" aria-hidden="true" />
         SpecTest
@@ -25,6 +33,7 @@ export function Sidebar() {
             key={item.to}
             to={item.to}
             end={item.to === "/"}
+            onClick={onNavigate}
             className={({ isActive }) => (isActive ? "st-nav__link is-active" : "st-nav__link")}
           >
             {item.label}

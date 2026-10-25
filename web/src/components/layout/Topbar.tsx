@@ -10,11 +10,44 @@ function pageTitle(pathname: string): string {
   return "Không tìm thấy trang";
 }
 
-export function Topbar({ onOpenLogs }: { onOpenLogs: () => void }) {
+type TopbarProps = {
+  navOpen: boolean;
+  onToggleNav: () => void;
+  onOpenLogs: () => void;
+};
+
+export function Topbar({ navOpen, onToggleNav, onOpenLogs }: TopbarProps) {
   const { pathname } = useLocation();
   return (
     <header className="st-topbar">
-      <p className="st-topbar__title">{pageTitle(pathname)}</p>
+      <div className="st-topbar__lead">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="st-menu-button"
+          aria-label="Menu"
+          aria-expanded={navOpen}
+          aria-controls="st-main-nav"
+          onClick={onToggleNav}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M2 4h12M2 8h12M2 12h12"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+          <span className="st-topbar__menu-label">Menu</span>
+        </Button>
+        <p className="st-topbar__title">{pageTitle(pathname)}</p>
+      </div>
       <div className="st-topbar__actions">
         <Button
           variant="ghost"

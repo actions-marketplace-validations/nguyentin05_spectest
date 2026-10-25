@@ -864,7 +864,7 @@
   font-size: var(--st-text-12);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .st-diff__sides {
     grid-template-columns: 1fr;
   }
