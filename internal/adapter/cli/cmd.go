@@ -43,7 +43,7 @@ runs multi-tier API assertions, and evolves tests when specifications change.`,
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVersion {
-				fmt.Fprintf(cmd.OutOrStdout(), "spectest %s\n", buildinfo.App())
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "spectest %s\n", buildinfo.App())
 				return
 			}
 			_ = cmd.Help()
@@ -83,10 +83,10 @@ func Execute() {
 	case 0:
 		return
 	case 130:
-		fmt.Fprintln(os.Stderr, "Canceled.")
+		_, _ = fmt.Fprintln(os.Stderr, "Canceled.")
 		os.Exit(130)
 	default:
-		fmt.Fprintln(os.Stderr, "Error:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
