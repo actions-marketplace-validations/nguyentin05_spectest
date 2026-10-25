@@ -47,6 +47,10 @@ export function resetMockStore(): void {
   Object.assign(mockState, createState());
 }
 
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const MAX_LOGS = 200;
 
 export function appendLog(message: string): void {
