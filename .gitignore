@@ -17,6 +17,7 @@ coverage.html
 
 # Local documentation
 *.local.md
+.local/
 docs/superpowers/
 
 # Local environment & credentials
