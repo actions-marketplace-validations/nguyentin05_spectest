@@ -6,6 +6,7 @@ import (
 	"github.com/nguyentin05/spectest/internal/domain"
 	"github.com/nguyentin05/spectest/internal/infrastructure/llm"
 	"github.com/nguyentin05/spectest/internal/infrastructure/storage"
+	"github.com/nguyentin05/spectest/internal/infrastructure/suitefile"
 	"github.com/spf13/pflag"
 )
 
@@ -16,6 +17,7 @@ type Factory struct {
 	Verbose bool
 
 	credStore *storage.FileCredentialStore
+	suiteStore domain.SuiteStore
 }
 
 // NewFactory returns an empty Factory. Services are created on first access.
@@ -40,6 +42,13 @@ func (f *Factory) CredentialStore() *storage.FileCredentialStore {
 		f.credStore = storage.NewFileCredentialStore()
 	}
 	return f.credStore
+}
+
+func (f *Factory) SuiteStore() domain.SuiteStore {
+	if f.suiteStore == nil {
+		f.suiteStore = suitefile.NewStore()
+	}
+	return f.suiteStore
 }
 
 // LLMService resolves the active provider, model, endpoint, and API key from the credential
