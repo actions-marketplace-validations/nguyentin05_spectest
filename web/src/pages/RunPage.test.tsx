@@ -18,6 +18,56 @@ it("streams a run and shows every step on the signal spine", async () => {
   expect(screen.getAllByText("422").length).toBeGreaterThan(0);
 });
 
+it("cancels a run and reports it", async () => {
+  mockState.runDelayMs = 50;
+  renderAt("/run");
+  await userEvent.type(
+    await screen.findByLabelText("Địa chỉ máy chủ đích"),
+    "http://localhost:8080",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Bắt đầu chạy" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Hủy phiên chạy" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Xác nhận hủy" }));
+  expect(await screen.findByText("Đã hủy phiên chạy")).toBeInTheDocument();
+});
+
+it("opens the detailed report after completion", async () => {
+  mockState.runDelayMs = 0;
+  renderAt("/run");
+  await userEvent.type(
+    await screen.findByLabelText("Địa chỉ máy chủ đích"),
+    "http://localhost:8080",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Bắt đầu chạy" }));
+  await screen.findByText("Hoàn tất · 2/2 kịch bản đạt");
+  await userEvent.click(screen.getByRole("tab", { name: "Báo cáo chi tiết" }));
+  expect(await screen.findByRole("table")).toBeInTheDocument();
+  expect(screen.getAllByRole("row")).toHaveLength(6);
+});
+
+it("shows the server message when a run cannot be cancelled", async () => {
+  mockState.runDelayMs = 50;
+  server.use(
+    http.post("/api/run/cancel", () =>
+      HttpResponse.json(
+        { success: false, error: "No active test run to cancel" },
+        { status: 409 },
+      ),
+    ),
+  );
+  renderAt("/run");
+  await userEvent.type(
+    await screen.findByLabelText("Địa chỉ máy chủ đích"),
+    "http://localhost:8080",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Bắt đầu chạy" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Hủy phiên chạy" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Xác nhận hủy" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "No active test run to cancel",
+  );
+});
+
 it("keeps received events when the stream drops and offers retry", async () => {
   const enc = new TextEncoder();
   server.use(
