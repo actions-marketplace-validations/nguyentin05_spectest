@@ -874,3 +874,50 @@
   font-size: var(--st-text-12);
   overflow-wrap: anywhere;
 }
+
+.st-upload__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+}
+
+.st-upload__dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--st-space-5) var(--st-space-4);
+  border: 1px dashed var(--st-line);
+  border-radius: 8px;
+  background: var(--st-canvas);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--st-motion-fast) ease,
+    background var(--st-motion-fast) ease;
+}
+
+.st-upload__dropzone:hover {
+  border-color: var(--st-brand);
+  background: var(--st-brand-soft);
+}
+
+.st-upload__dropzone:focus-within {
+  outline: 2px solid var(--st-brand);
+  outline-offset: 2px;
+}
+
+.st-upload__drop-title {
+  font-size: var(--st-text-13);
+  font-weight: 500;
+}
+
+.st-upload__hint {
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+}
+
+.st-upload__error {
+  color: var(--st-fail);
+  font-size: var(--st-text-12);
+}

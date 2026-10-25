@@ -11,6 +11,7 @@ import { ErrorState } from "../components/ui/ErrorState";
 import { LoadingBlock } from "../components/ui/LoadingBlock";
 import { SearchInput } from "../components/ui/SearchInput";
 import { FileTable } from "../components/workspace/FileTable";
+import { UploadPanel } from "../components/workspace/UploadPanel";
 
 type FilterId = "all" | WorkspaceItemType;
 
@@ -49,53 +50,58 @@ export function WorkspacePage() {
       );
     });
 
-    content =
-      data.items.length === 0 ? (
-        <EmptyState
-          title="Chưa có tệp nào"
-          description="Tải đặc tả API, yêu cầu hoặc kịch bản để bắt đầu."
-          action={
-            <a className="st-btn st-btn--secondary" href="#upload">
-              Tải tệp lên
-            </a>
-          }
-        />
-      ) : (
-        <>
-          <p className="st-workspace__current">
-            <span>Thư mục:</span>
-            <code>{data.current_dir}</code>
-          </p>
+    content = (
+      <>
+        <p className="st-workspace__current">
+          <span>Thư mục:</span>
+          <code>{data.current_dir}</code>
+        </p>
 
-          <div className="st-workspace__filters" role="group" aria-label="Lọc theo loại tệp">
-            {FILTERS.map((option) => (
-              <Button
-                key={option.id}
-                variant={filter === option.id ? "primary" : "secondary"}
-                size="sm"
-                aria-pressed={filter === option.id}
-                onClick={() => setFilter(option.id)}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
+        {data.items.length === 0 ? (
+          <EmptyState
+            title="Chưa có tệp nào"
+            description="Tải đặc tả API, yêu cầu hoặc kịch bản để bắt đầu."
+            action={
+              <a className="st-btn st-btn--secondary" href="#upload">
+                Tải tệp lên
+              </a>
+            }
+          />
+        ) : (
+          <>
+            <div className="st-workspace__filters" role="group" aria-label="Lọc theo loại tệp">
+              {FILTERS.map((option) => (
+                <Button
+                  key={option.id}
+                  variant={filter === option.id ? "primary" : "secondary"}
+                  size="sm"
+                  aria-pressed={filter === option.id}
+                  onClick={() => setFilter(option.id)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
 
-          <div className="st-workspace__toolbar">
-            <SearchInput
-              aria-label="Tìm tệp"
-              placeholder="Tìm theo tên hoặc đường dẫn…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <span className="st-workspace__count">
-              {items.length} / {data.items.length} tệp
-            </span>
-          </div>
+            <div className="st-workspace__toolbar">
+              <SearchInput
+                aria-label="Tìm tệp"
+                placeholder="Tìm theo tên hoặc đường dẫn…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <span className="st-workspace__count">
+                {items.length} / {data.items.length} tệp
+              </span>
+            </div>
 
-          <FileTable items={items} />
-        </>
-      );
+            <FileTable items={items} />
+          </>
+        )}
+
+        <UploadPanel onUploaded={reload} />
+      </>
+    );
   }
 
   return (
