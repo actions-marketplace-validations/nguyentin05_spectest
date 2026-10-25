@@ -14,7 +14,7 @@ type LLMService interface {
 
 	// GenerateStructured sends a system instruction and user prompt to the configured model
 	// and returns the raw JSON payload extracted from the completion response.
-	GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, responseSchema interface{}) (string, error)
+	GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, responseSchema any) (string, error)
 }
 
 // CredentialStore defines the configuration port for resolving and persisting LLM provider
