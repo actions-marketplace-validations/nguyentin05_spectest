@@ -91,6 +91,18 @@
   color: var(--st-ink-muted);
 }
 
+.st-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--st-space-2);
+}
+
+.st-topbar__logs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .st-mode-chip {
   padding: 4px 10px;
   border: 1px solid var(--st-line);
@@ -133,4 +145,14 @@
   padding: var(--st-space-2) var(--st-space-3);
   border-radius: var(--st-radius);
   background: var(--st-surface);
+}
+
+@media (max-width: 640px) {
+  .st-topbar {
+    padding: 0 var(--st-space-4);
+  }
+
+  .st-topbar__logs-label {
+    display: none;
+  }
 }
