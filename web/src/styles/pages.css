@@ -763,3 +763,114 @@
 .st-history__reason {
   font-size: var(--st-text-13);
 }
+
+.st-workspace__current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+}
+
+.st-workspace__current code {
+  overflow-wrap: anywhere;
+}
+
+.st-workspace__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.st-workspace__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-3);
+}
+
+.st-workspace__toolbar .st-search {
+  flex: 1;
+  min-width: 240px;
+}
+
+.st-workspace__count {
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+}
+
+.st-workspace__empty {
+  padding: var(--st-space-4);
+  border: 1px dashed var(--st-line);
+  border-radius: var(--st-radius);
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-13);
+}
+
+.st-file-table__scroll {
+  overflow-x: auto;
+  border: 1px solid var(--st-line);
+  border-radius: var(--st-radius);
+  background: var(--st-surface);
+}
+
+.st-file-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+
+.st-file-table th {
+  padding: 10px var(--st-space-4);
+  border-bottom: 1px solid var(--st-line);
+  background: var(--st-canvas);
+  color: var(--st-ink-muted);
+  font-size: var(--st-text-12);
+  font-weight: 500;
+  text-align: left;
+}
+
+.st-file-table td {
+  padding: var(--st-space-3) var(--st-space-4);
+  border-bottom: 1px solid var(--st-line);
+  font-size: var(--st-text-13);
+  vertical-align: middle;
+}
+
+.st-file-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.st-file-table__name {
+  font-size: var(--st-text-13);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.st-file-table__path {
+  color: var(--st-ink-muted);
+  font-family: var(--st-font-mono);
+  font-size: var(--st-text-12);
+  overflow-wrap: anywhere;
+}
+
+.st-file-table__action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.st-file-table__modal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--st-space-2);
+}
+
+.st-file-table__modal code {
+  padding: var(--st-space-2);
+  border-radius: 6px;
+  background: var(--st-canvas);
+  font-size: var(--st-text-12);
+  overflow-wrap: anywhere;
+}

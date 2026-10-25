@@ -5,7 +5,7 @@ const LABELS: Record<WorkspaceItemType, string> = {
   prd: "Yêu cầu",
   suite: "Kịch bản",
   history: "Lịch sử",
-  matrix: "Ma trận",
+  matrix: "Báo cáo",
   other: "Khác",
 };
 
