@@ -311,7 +311,9 @@ export function GeneratePage() {
 
   let content: ReactNode = null;
 
-  if (loading) {
+  if (data) {
+    content = <GenerateWizard items={data.items} onGenerated={reload} />;
+  } else if (loading) {
     content = <LoadingBlock label="Đang quét workspace…" rows={3} />;
   } else if (error) {
     content = isMissingEndpoint(error) ? (
@@ -319,8 +321,6 @@ export function GeneratePage() {
     ) : (
       <ErrorState error={error} onRetry={reload} />
     );
-  } else if (data) {
-    content = <GenerateWizard items={data.items} onGenerated={reload} />;
   }
 
   return (

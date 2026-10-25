@@ -40,7 +40,11 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   }
 
   if (!response.ok) {
-    const message = isErrorEnvelope(payload) ? payload.error : `HTTP ${response.status}`;
+    const message = isErrorEnvelope(payload)
+      ? payload.error
+      : response.status === 502 || response.status === 503 || response.status === 504
+        ? "Không kết nối được máy chủ"
+        : `HTTP ${response.status}`;
     throw new ApiError(response.status, message, payload);
   }
 

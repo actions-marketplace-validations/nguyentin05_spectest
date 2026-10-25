@@ -101,7 +101,7 @@
   white-space: nowrap;
 }
 
-.st-menu-button {
+.st-topbar .st-menu-button {
   display: none;
 }
 
@@ -188,7 +188,7 @@
     margin-left: 0;
   }
 
-  .st-menu-button {
+  .st-topbar .st-menu-button {
     display: inline-flex;
   }
 
