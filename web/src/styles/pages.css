@@ -1,0 +1,9 @@
+.st-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-5);
+}
+
+.st-page h1 {
+  font-size: var(--st-text-32);
+}
