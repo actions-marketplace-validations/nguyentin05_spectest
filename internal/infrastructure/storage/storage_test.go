@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -46,7 +47,7 @@ func TestFileCredentialStore_SaveAndResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat credentials file: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("credentials file permissions = %04o, want 0600", perm)
 	}
 

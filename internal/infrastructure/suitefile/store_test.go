@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -185,7 +186,7 @@ func TestStore_RoundTripAllFiles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Stat(%s) error = %v", name, err)
 		}
-		if fi.Mode().Perm() != 0o644 {
+		if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o644 {
 			t.Errorf("%s mode = %04o, want 0644", name, fi.Mode().Perm())
 		}
 	}

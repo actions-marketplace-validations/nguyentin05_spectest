@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestWrite_CreatesFileAndMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
-	if fi.Mode().Perm() != 0o644 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o644 {
 		t.Errorf("mode = %04o, want 0644", fi.Mode().Perm())
 	}
 
@@ -81,7 +82,7 @@ func TestWrite_ReplacesExistingWithoutTempLeftover(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %04o, want 0600", fi.Mode().Perm())
 	}
 
