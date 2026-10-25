@@ -16,7 +16,6 @@ type Factory struct {
 	Verbose bool
 
 	credStore *storage.FileCredentialStore
-	suiteRepo *storage.YAMLRepository
 }
 
 // NewFactory returns an empty Factory. Services are created on first access.
@@ -24,12 +23,9 @@ func NewFactory() *Factory {
 	return &Factory{}
 }
 
-// NewFactoryWith constructs a Factory with pre-configured stores, useful in tests.
-func NewFactoryWith(credStore *storage.FileCredentialStore, suiteRepo *storage.YAMLRepository) *Factory {
-	return &Factory{
-		credStore: credStore,
-		suiteRepo: suiteRepo,
-	}
+// NewFactoryWith constructs a Factory with a pre-configured credential store, useful in tests.
+func NewFactoryWith(credStore *storage.FileCredentialStore) *Factory {
+	return &Factory{credStore: credStore}
 }
 
 // BindFlags registers global persistent flags (currently `--verbose`) on the given flag set,
@@ -44,14 +40,6 @@ func (f *Factory) CredentialStore() *storage.FileCredentialStore {
 		f.credStore = storage.NewFileCredentialStore()
 	}
 	return f.credStore
-}
-
-// SuiteRepository returns the shared YAMLRepository, creating it on first call.
-func (f *Factory) SuiteRepository() *storage.YAMLRepository {
-	if f.suiteRepo == nil {
-		f.suiteRepo = storage.NewYAMLRepository()
-	}
-	return f.suiteRepo
 }
 
 // LLMService resolves the active provider, model, endpoint, and API key from the credential

@@ -89,7 +89,7 @@ func newInitCmd(f *cmdutil.Factory) *cobra.Command {
 				}
 				if isTerminalReader(in) {
 					currentKey, _ := store.GetAPIKey(prov)
-					fmt.Fprintf(out, "API Key [%s]: ", storage.MaskKey(currentKey))
+					_, _ = fmt.Fprintf(out, "API Key [%s]: ", storage.MaskKey(currentKey))
 					key, err := readSecretLine(in, out, reader)
 					if err != nil {
 						return err
@@ -100,12 +100,12 @@ func newInitCmd(f *cmdutil.Factory) *cobra.Command {
 						}
 					}
 				}
-				fmt.Fprintf(out, "Saved configuration for provider %q at %s (0600)\n", prov, store.GlobalPath())
+				_, _ = fmt.Fprintf(out, "Saved configuration for provider %q at %s (0600)\n", prov, store.GlobalPath())
 				return nil
 			}
 
 			currentProv := store.GetDefaultProvider()
-			fmt.Fprintf(out, "LLM Provider [%s]: ", defaultLabel(currentProv))
+			_, _ = fmt.Fprintf(out, "LLM Provider [%s]: ", defaultLabel(currentProv))
 			prov, _ := reader.ReadString('\n')
 			prov = strings.ToLower(strings.TrimSpace(prov))
 			if prov == "" {
@@ -119,7 +119,7 @@ func newInitCmd(f *cmdutil.Factory) *cobra.Command {
 			}
 
 			currentEP, _ := store.GetEndpoint(prov)
-			fmt.Fprintf(out, "Endpoint URL [%s]: ", defaultLabel(currentEP))
+			_, _ = fmt.Fprintf(out, "Endpoint URL [%s]: ", defaultLabel(currentEP))
 			ep, _ := reader.ReadString('\n')
 			ep = strings.TrimSpace(ep)
 			if ep != "" {
@@ -129,7 +129,7 @@ func newInitCmd(f *cmdutil.Factory) *cobra.Command {
 			}
 
 			currentModel := store.GetDefaultModel(prov)
-			fmt.Fprintf(out, "Model Name [%s]: ", defaultLabel(currentModel))
+			_, _ = fmt.Fprintf(out, "Model Name [%s]: ", defaultLabel(currentModel))
 			model, _ := reader.ReadString('\n')
 			model = strings.TrimSpace(model)
 			if model != "" {
@@ -139,7 +139,7 @@ func newInitCmd(f *cmdutil.Factory) *cobra.Command {
 			}
 
 			currentKey, _ := store.GetAPIKey(prov)
-			fmt.Fprintf(out, "API Key [%s]: ", storage.MaskKey(currentKey))
+			_, _ = fmt.Fprintf(out, "API Key [%s]: ", storage.MaskKey(currentKey))
 			key, err := readSecretLine(in, out, reader)
 			if err != nil {
 				return err
@@ -150,7 +150,7 @@ func newInitCmd(f *cmdutil.Factory) *cobra.Command {
 				}
 			}
 
-			fmt.Fprintf(out, "Saved configuration at %s (0600)\n", store.GlobalPath())
+			_, _ = fmt.Fprintf(out, "Saved configuration at %s (0600)\n", store.GlobalPath())
 			return nil
 		},
 	}
@@ -182,7 +182,7 @@ func newSetCmd(f *cmdutil.Factory) *cobra.Command {
 				}
 				reader := bufio.NewReader(in)
 				currentKey, _ := store.GetAPIKey(activeProv)
-				fmt.Fprintf(out, "API Key [%s]: ", storage.MaskKey(currentKey))
+				_, _ = fmt.Fprintf(out, "API Key [%s]: ", storage.MaskKey(currentKey))
 				secret, err := readSecretLine(in, out, reader)
 				if err != nil {
 					return err
@@ -193,7 +193,7 @@ func newSetCmd(f *cmdutil.Factory) *cobra.Command {
 				if err := store.SetAPIKey(activeProv, secret); err != nil {
 					return err
 				}
-				fmt.Fprintf(out, "Saved api-key for provider %q (%s, 0600)\n", activeProv, storage.MaskKey(secret))
+				_, _ = fmt.Fprintf(out, "Saved api-key for provider %q (%s, 0600)\n", activeProv, storage.MaskKey(secret))
 				return nil
 			}
 
@@ -207,17 +207,17 @@ func newSetCmd(f *cmdutil.Factory) *cobra.Command {
 				if err := store.SetDefaultProvider(val); err != nil {
 					return err
 				}
-				fmt.Fprintf(out, "Set default provider = %q\n", val)
+				_, _ = fmt.Fprintf(out, "Set default provider = %q\n", val)
 			case "endpoint":
 				if err := store.SetEndpoint(activeProv, val); err != nil {
 					return err
 				}
-				fmt.Fprintf(out, "Set endpoint for provider %q = %q\n", activeProv, val)
+				_, _ = fmt.Fprintf(out, "Set endpoint for provider %q = %q\n", activeProv, val)
 			case "model":
 				if err := store.SetDefaultModel(activeProv, val); err != nil {
 					return err
 				}
-				fmt.Fprintf(out, "Set model for provider %q = %q\n", activeProv, val)
+				_, _ = fmt.Fprintf(out, "Set model for provider %q = %q\n", activeProv, val)
 			default:
 				return fmt.Errorf("unknown configuration key %q (valid keys: provider, endpoint, model, api-key)", key)
 			}
@@ -239,12 +239,12 @@ func newListCmd(f *cmdutil.Factory) *cobra.Command {
 			key, _ := store.GetAPIKey(prov)
 			ep, _ := store.GetEndpoint(prov)
 			model := store.GetDefaultModel(prov)
-			fmt.Fprintln(out, "Active SpecTest Configuration:")
-			fmt.Fprintf(out, "  Config File      : %s\n", store.GlobalPath())
-			fmt.Fprintf(out, "  Default Provider : %s\n", defaultLabel(prov))
-			fmt.Fprintf(out, "  Active Model     : %s\n", defaultLabel(model))
-			fmt.Fprintf(out, "  Endpoint URL     : %s\n", defaultLabel(ep))
-			fmt.Fprintf(out, "  API Key          : %s\n", storage.MaskKey(key))
+			_, _ = fmt.Fprintln(out, "Active SpecTest Configuration:")
+			_, _ = fmt.Fprintf(out, "  Config File      : %s\n", store.GlobalPath())
+			_, _ = fmt.Fprintf(out, "  Default Provider : %s\n", defaultLabel(prov))
+			_, _ = fmt.Fprintf(out, "  Active Model     : %s\n", defaultLabel(model))
+			_, _ = fmt.Fprintf(out, "  Endpoint URL     : %s\n", defaultLabel(ep))
+			_, _ = fmt.Fprintf(out, "  API Key          : %s\n", storage.MaskKey(key))
 		},
 	}
 }
@@ -278,7 +278,7 @@ func readSecretLine(in io.Reader, out io.Writer, reader *bufio.Reader) (string, 
 	}
 
 	bytePassword, err := term.ReadPassword(int(f.Fd()))
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out)
 	if err != nil {
 		return "", err
 	}
