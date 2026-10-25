@@ -1,8 +1,9 @@
-// Package generate implements the v2 generation pipeline: canonical hashing,
+// Package generate implements the v3 generation pipeline: canonical hashing,
 // OpenAPI matching, LLM calls, suite assembly, and persistence.
 package generate
 
 import (
+	"maps"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -124,6 +125,7 @@ func cloneSuite(suite *domain.Suite) *domain.Suite {
 	}
 	return &domain.Suite{
 		Version:   suite.Version,
+		Input:     suite.Input,
 		Servers:   slices.Clone(suite.Servers),
 		APIs:      slices.Clone(suite.APIs),
 		Analysis:  suite.Analysis,
@@ -210,9 +212,7 @@ func cloneStringMap(in map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
+	maps.Copy(out, in)
 	return out
 }
 

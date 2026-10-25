@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"maps"
 	"context"
 	"path/filepath"
 	"strings"
@@ -18,11 +19,10 @@ const (
 	ModeNoop         Mode = "no-op"
 	ModeSync         Mode = "sync"
 	ModeRecoverTrack Mode = "recover-track"
-	ModeDryRun       Mode = "dry-run"
 )
 
-// buildBaseEntry constructs the single base entry for spectest.log.yaml.
-// The suite snapshot is deep-cloned so later mutations cannot alter the log.
+// buildBaseEntry constructs the single base entry for spectest.log.yaml. The
+// suite snapshot is deep-cloned so later mutations cannot alter the log.
 func (g *Generator) buildBaseEntry(s *domain.Suite) domain.BaseEntry {
 	return domain.BaseEntry{
 		At:        g.clock.Now().Format(time.RFC3339),
@@ -37,28 +37,21 @@ func (g *Generator) buildBaseEntry(s *domain.Suite) domain.BaseEntry {
 // Initial run (old == nil): every current API is "active", last_update = 0.
 // Update run (old != nil): removed entries from old are preserved forever;
 // current APIs are refreshed; source fingerprints are reset.
-func buildTrack(src *domain.SourceSet, old *domain.TrackFile, lastUpdate int) *domain.TrackFile {
+// mentions are stored only when requirements exist (input both).
+func buildTrack(
+	src *domain.SourceSet, old *domain.TrackFile, lastUpdate int, mentions []domain.APIMention,
+) *domain.TrackFile {
 	apis := make(map[string]domain.APIState, len(src.APIs))
 
-	// Preserve old states (including removed) so history is not lost.
 	if old != nil {
-		for k, v := range old.APIs {
-			apis[k] = v
-		}
+		maps.Copy(apis, old.APIs)
 	}
 
-	// Refresh entries for APIs currently present in source.
 	present := make(map[string]struct{}, len(src.APIs))
 	for _, a := range src.APIs {
 		present[a.Key] = struct{}{}
-		apis[a.Key] = domain.APIState{
-			Status: "active",
-			Hash:   a.Hash,
-			Sig:    a.Sig,
-		}
+		apis[a.Key] = domain.APIState{Status: "active", Hash: a.Hash, Sig: a.Sig}
 	}
-
-	// Mark previously-active entries that are no longer present as removed.
 	for k, v := range apis {
 		if _, ok := present[k]; !ok && v.Status == "active" {
 			v.Status = "removed"
@@ -66,25 +59,25 @@ func buildTrack(src *domain.SourceSet, old *domain.TrackFile, lastUpdate int) *d
 		}
 	}
 
-	sources := domain.Sources{
-		OpenAPI: src.OpenAPI,
-	}
+	sources := domain.Sources{OpenAPI: src.OpenAPI}
 	if src.Requirements != nil {
 		sources.Requirements = &domain.RequirementState{
-			File: src.Requirements.File,
-			Raw:  src.Requirements.Raw,
-			Hash: requirementsHash(src.Requirements.Raw),
+			File:        src.Requirements.File,
+			Raw:         src.Requirements.Raw,
+			Hash:        requirementsHash(src.Requirements.Raw),
+			APIMentions: mentions,
 		}
 	}
 
 	return &domain.TrackFile{
 		LastUpdate: lastUpdate,
+		Input:      src.Input,
 		Sources:    sources,
 		APIs:       apis,
 	}
 }
 
-// persist delegates to store.Save. On dry-run, it returns immediately without
+// persist delegates to store.Save. On dry-run it returns immediately without
 // touching the filesystem (no directory, no marker, no file).
 func (g *Generator) persist(
 	ctx context.Context, req Request, files *domain.FileSet, opts domain.WriteOptions,
@@ -96,28 +89,26 @@ func (g *Generator) persist(
 }
 
 // joinDisplayPath returns the path as it should appear in the CLI summary.
-// Relative paths get a "./" prefix for clarity, absolute paths are kept as-is.
+// Relative paths inside the working directory get a "./" prefix.
 func joinDisplayPath(dir, name string) string {
 	joined := filepath.Join(dir, name)
-	if filepath.IsAbs(joined) {
+	if filepath.IsAbs(joined) || joined == ".." || strings.HasPrefix(joined, ".."+string(filepath.Separator)) {
 		return joined
 	}
-	if !strings.HasPrefix(joined, "./") {
-		return "./" + joined
-	}
-	return joined
+	return "." + string(filepath.Separator) + joined
 }
 
 // buildInitialFileSet assembles the three files for a first run.
-func (g *Generator) buildInitialFileSet(src *domain.SourceSet, suite *domain.Suite) (*domain.FileSet, error) {
+func (g *Generator) buildInitialFileSet(
+	src *domain.SourceSet, suite *domain.Suite, mentions []domain.APIMention,
+) *domain.FileSet {
 	normalized := normalizeSuite(suite)
-	base := g.buildBaseEntry(normalized)
 	return &domain.FileSet{
 		Suite: normalized,
 		Log: &domain.LogFile{
-			Base:   base,
+			Base:   g.buildBaseEntry(normalized),
 			Update: []domain.UpdateEntry{},
 		},
-		Track: buildTrack(src, nil, 0),
-	}, nil
+		Track: buildTrack(src, nil, 0, mentions),
+	}
 }

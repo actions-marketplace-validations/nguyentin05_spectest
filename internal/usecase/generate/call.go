@@ -7,69 +7,97 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nguyentin05/spectest/internal/domain"
 )
 
-// maxLLMInputChars guards against pathological prompts that exceed the model's
-// context window. The pipeline aborts before invoking the LLM.
+// maxLLMInputChars guards against prompts that exceed the model context. The
+// pipeline aborts before calling the LLM.
 const maxLLMInputChars = 200_000
 
-// callValidated invokes the LLM with a strict JSON contract and runs the
-// provided validator on the decoded value.
-//
-// On decode or semantic failure it performs exactly one repair call that
-// includes the offending output and the validation error. A second failure is
-// returned unchanged. The stage name is prefixed to every returned error so
-// callers can attribute failures to a pipeline phase.
+// defaultRepairs is the number of repair calls most stages get.
+const defaultRepairs = 1
+
+// callValidated is callValidatedN with the default number of repairs.
 func callValidated[T any](
 	ctx context.Context,
 	llm domain.LLMService,
 	stage, systemPrompt, userPrompt string,
 	validate func(T) error,
 ) (T, error) {
+	return callValidatedN(ctx, llm, stage, systemPrompt, userPrompt, defaultRepairs, validate)
+}
+
+// callValidatedN calls the LLM with a strict JSON contract and up to
+// maxRepairs repair calls when decoding or validation fails.
+func callValidatedN[T any](
+	ctx context.Context,
+	llm domain.LLMService,
+	stage, systemPrompt, userPrompt string,
+	maxRepairs int,
+	validate func(T) error,
+) (T, error) {
+	return callValidatedLast(ctx, llm, stage, systemPrompt, userPrompt, maxRepairs,
+		func(v T, _ bool) error {
+			if validate == nil {
+				return nil
+			}
+			return validate(v)
+		})
+}
+
+// callValidatedLast is the core loop. validate also learns whether this is the
+// last attempt, so a stage can be strict while repairs remain and lenient
+// (drop and warn) when they are exhausted.
+func callValidatedLast[T any](
+	ctx context.Context,
+	llm domain.LLMService,
+	stage, systemPrompt, userPrompt string,
+	maxRepairs int,
+	validate func(v T, last bool) error,
+) (T, error) {
 	var zero T
+	system, user := systemPrompt, userPrompt
+	var failures []error
 
-	if err := checkInputLimit(systemPrompt, userPrompt); err != nil {
-		return zero, fmt.Errorf("%s: %w", stage, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return zero, fmt.Errorf("%s: %w", stage, err)
-	}
+	for attempt := 0; attempt <= maxRepairs; attempt++ {
+		label := stage
+		if attempt > 0 {
+			label = fmt.Sprintf("%s: repair %d", stage, attempt)
+		}
+		if err := checkInputLimit(system, user); err != nil {
+			return zero, fmt.Errorf("%s: %w", label, err)
+		}
+		if err := ctx.Err(); err != nil {
+			return zero, fmt.Errorf("%s: %w", label, err)
+		}
 
-	raw, err := llm.GenerateStructured(ctx, systemPrompt, userPrompt, nil)
-	if err != nil {
-		return zero, fmt.Errorf("%s: llm call: %w", stage, err)
-	}
+		raw, err := llm.GenerateStructured(ctx, system, user, nil)
+		if err != nil {
+			return zero, fmt.Errorf("%s: llm call: %w", label, err)
+		}
 
-	value, firstErr := decodeAndValidate[T](raw, validate)
-	if firstErr == nil {
-		return value, nil
+		value, vErr := decodeAndValidate(raw, func(v T) error {
+			if validate == nil {
+				return nil
+			}
+			return validate(v, attempt == maxRepairs)
+		})
+		if vErr == nil {
+			return value, nil
+		}
+		failures = append(failures, vErr)
+		system, user = buildRepairPrompt(systemPrompt, userPrompt, raw, vErr)
 	}
-
-	repairSystem, repairUser := buildRepairPrompt(systemPrompt, userPrompt, raw, firstErr)
-	if err := checkInputLimit(repairSystem, repairUser); err != nil {
-		return zero, fmt.Errorf("%s: repair: %w", stage, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return zero, fmt.Errorf("%s: repair: %w", stage, err)
-	}
-
-	raw2, err := llm.GenerateStructured(ctx, repairSystem, repairUser, nil)
-	if err != nil {
-		return zero, fmt.Errorf("%s: repair llm call: %w", stage, err)
-	}
-
-	value, secondErr := decodeAndValidate[T](raw2, validate)
-	if secondErr != nil {
-		return zero, fmt.Errorf("%s: after repair: %w", stage, errors.Join(firstErr, secondErr))
-	}
-	return value, nil
+	return zero, fmt.Errorf("%s: after %d repair(s): %w", stage, maxRepairs, errors.Join(failures...))
 }
 
 func checkInputLimit(system, user string) error {
-	if total := len(system) + len(user); total > maxLLMInputChars {
+	total := utf8.RuneCountInString(system) + utf8.RuneCountInString(user)
+	if total > maxLLMInputChars {
 		return fmt.Errorf("input too large: %d chars exceeds limit %d", total, maxLLMInputChars)
 	}
 	return nil
@@ -80,6 +108,11 @@ func decodeAndValidate[T any](raw string, validate func(T) error) (T, error) {
 	if err := decodeStrictJSON([]byte(raw), &value); err != nil {
 		return value, fmt.Errorf("decode json: %w", err)
 	}
+	// "null" decodes into a nil pointer without error; validators must never
+	// see it.
+	if rv := reflect.ValueOf(value); rv.IsValid() && rv.Kind() == reflect.Pointer && rv.IsNil() {
+		return value, errors.New("decode json: response is null")
+	}
 	if validate != nil {
 		if err := validate(value); err != nil {
 			return value, fmt.Errorf("validate: %w", err)
@@ -88,8 +121,7 @@ func decodeAndValidate[T any](raw string, validate func(T) error) (T, error) {
 	return value, nil
 }
 
-// decodeStrictJSON rejects unknown fields and any trailing tokens after the
-// first JSON value.
+// decodeStrictJSON rejects unknown fields and any trailing data.
 func decodeStrictJSON(data []byte, out any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -97,8 +129,6 @@ func decodeStrictJSON(data []byte, out any) error {
 	if err := dec.Decode(out); err != nil {
 		return err
 	}
-
-	// A second Decode must return io.EOF; anything else means trailing data.
 	var extra json.RawMessage
 	if err := dec.Decode(&extra); err == nil {
 		return errors.New("multiple JSON values in response")

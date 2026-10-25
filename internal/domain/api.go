@@ -9,6 +9,7 @@ type APIInput struct {
 // SourceSet is the fully loaded and normalized view of all CLI inputs.
 // Servers preserves --api order; APIs is sorted by server, path, then method.
 type SourceSet struct {
+	Input        InputMode            `yaml:"input" json:"input"`
 	Servers      []string             `yaml:"servers" json:"servers"`
 	APIs         []API                `yaml:"apis" json:"apis"`
 	OpenAPI      map[string]FileState `yaml:"openapi,omitempty" json:"openapi,omitempty"`
@@ -62,4 +63,14 @@ type Schema struct {
 	Items                *Schema           `yaml:"items,omitempty" json:"items,omitempty"`
 	AdditionalProperties *bool             `yaml:"additional_properties,omitempty" json:"additional_properties,omitempty"`
 	Unsupported          bool              `yaml:"unsupported,omitempty" json:"unsupported,omitempty"`
+}
+
+// APIMention is an API mentioned in the requirements and whether it is
+// present in OpenAPI. Mentions never create APIs; they only produce warnings.
+type APIMention struct {
+	Method   string `yaml:"method,omitempty" json:"method,omitempty"`
+	Path     string `yaml:"path,omitempty" json:"path,omitempty"`
+	Service  string `yaml:"service,omitempty" json:"service,omitempty"`
+	Evidence string `yaml:"evidence" json:"evidence"`
+	Known    bool   `yaml:"known,omitempty" json:"known,omitempty"`
 }

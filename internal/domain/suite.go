@@ -9,6 +9,7 @@ package domain
 // log and may be edited by users.
 type Suite struct {
 	Version   int              `yaml:"version" json:"version"`
+	Input     InputMode        `yaml:"input" json:"input"`
 	Servers   []string         `yaml:"servers" json:"servers"`
 	APIs      []string         `yaml:"apis" json:"apis"`
 	Analysis  string           `yaml:"analysis,omitempty" json:"analysis,omitempty"`

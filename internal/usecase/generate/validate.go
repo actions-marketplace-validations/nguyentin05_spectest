@@ -33,7 +33,7 @@ var (
 	validateServerRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 	validateIDRe     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	validateNameRe   = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-	validateAPIKeyRe = regexp.MustCompile(`^[A-Z]+ \{[a-z][a-z0-9_-]*\}/.+$`)
+	validateAPIKeyRe = regexp.MustCompile(`^[A-Z]+ \{[a-z][a-z0-9_-]*\}/.*$`)
 	validateSaveRe   = regexp.MustCompile(`^(body|header)\..+$`)
 	templateRe       = regexp.MustCompile(`\{\{([a-zA-Z_][a-zA-Z0-9_.]*)\}\}`)
 )
@@ -62,7 +62,7 @@ func validateSuite(s *domain.Suite, src *domain.SourceSet, opts validationOption
 }
 
 // ============================================================================
-// Structure / IDs / Graph (unchanged from 5a)
+// Structure / IDs / Graph
 // ============================================================================
 
 func validateStructure(s *domain.Suite, opts validationOptions) []error {
@@ -71,9 +71,13 @@ func validateStructure(s *domain.Suite, opts validationOptions) []error {
 	if s.Version != 1 {
 		errs = append(errs, fmt.Errorf("version must be 1, got %d", s.Version))
 	}
+	if !s.Input.Valid() {
+		errs = append(errs, fmt.Errorf("input must be openapi or both, got %q", s.Input))
+	}
 	if opts.RequireAnalysis && strings.TrimSpace(s.Analysis) == "" {
 		errs = append(errs, fmt.Errorf("analysis must not be empty"))
 	}
+	errs = append(errs, checkManagedBlocks(s.Analysis)...)
 
 	if len(s.Servers) == 0 {
 		errs = append(errs, fmt.Errorf("servers must not be empty"))
@@ -106,7 +110,20 @@ func validateStructure(s *domain.Suite, opts validationOptions) []error {
 		seenAPIs[key] = struct{}{}
 	}
 
+	if !hasActiveScenario(s) {
+		errs = append(errs, fmt.Errorf("at least one scenario must be active (not locked or skipped)"))
+	}
+
 	return errs
+}
+
+func hasActiveScenario(s *domain.Suite) bool {
+	for _, sc := range s.Scenarios {
+		if !sc.Locked && sc.Skip == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func validateIDsAndNames(s *domain.Suite) []error {
@@ -157,7 +174,7 @@ func validateSetupGraph(s *domain.Suite) []error {
 }
 
 // ============================================================================
-// API lookup (unchanged from 5a)
+// API lookup
 // ============================================================================
 
 func buildAPILookup(s *domain.Suite, src *domain.SourceSet, allowStale bool) map[string]domain.API {
@@ -192,13 +209,12 @@ func apiFromKey(key string) (domain.API, bool) {
 }
 
 // ============================================================================
-// 5b: Deep semantics (variables, body, status, saves)
+// Deep semantics (variables, body, status, saves)
 // ============================================================================
 
-// validateSemantics replaces 5a's shallow per-entity check and adds deep
-// validation. Setups are walked in topo order so each setup's scope contains
-// its dependencies' vars and saves.
-
+// validateSemantics validates variables, bodies, statuses and saves. Setups are
+// walked in topo order so each setup's scope contains its dependencies' vars
+// and saves.
 func validateSemantics(s *domain.Suite, apiLookup map[string]domain.API) []error {
 	var errs []error
 
@@ -212,7 +228,7 @@ func validateSemantics(s *domain.Suite, apiLookup map[string]domain.API) []error
 		return []error{err}
 	}
 
-	seedNames, bareSeedIndex := seedScope(s)
+	seedNames, bareSeedIndex := seedScope(s.Seed)
 
 	setupScopes := make(map[string]map[string]struct{}, len(s.Setup))
 	for _, name := range setupOrder {
@@ -379,6 +395,12 @@ func validateStepsDeep(
 // ============================================================================
 
 func validateBodyDeep(owner string, idx int, body any, req *domain.RequestSpec) []error {
+	if body == nil {
+		if req.Required {
+			return []error{fmt.Errorf("%s: step %d: request body is required", owner, idx)}
+		}
+		return nil
+	}
 	if !req.JSON || req.Schema.Unsupported {
 		return nil
 	}
@@ -548,10 +570,10 @@ func walkStrings(v any, fn func(string)) {
 // Scope helpers
 // ============================================================================
 
-func seedScope(s *domain.Suite) (scope map[string]struct{}, bareIndex map[string][]string) {
+func seedScope(seeds map[string]domain.Seed) (scope map[string]struct{}, bareIndex map[string][]string) {
 	scope = map[string]struct{}{}
 	bareIndex = map[string][]string{}
-	for name, seed := range s.Seed {
+	for name, seed := range seeds {
 		for k := range seed.Vars {
 			scope[name+"."+k] = struct{}{}
 			bareIndex[k] = append(bareIndex[k], name)
@@ -584,52 +606,18 @@ func cloneScope(s map[string]struct{}) map[string]struct{} {
 // ============================================================================
 
 func topoSetupOrder(setups map[string]domain.Setup) ([]string, error) {
-	const (
-		white = 0
-		gray  = 1
-		black = 2
-	)
-	color := map[string]int{}
-	var order []string
-	var visit func(string) error
-	visit = func(name string) error {
-		switch color[name] {
-		case gray:
-			return fmt.Errorf("setup graph has a cycle at %q", name)
-		case black:
-			return nil
-		}
-		setup, ok := setups[name]
-		if !ok {
-			return fmt.Errorf("setup %q not found", name)
-		}
-		color[name] = gray
-		deps := append([]string(nil), setup.Use...)
-		sort.Strings(deps)
-		for _, d := range deps {
-			if err := visit(d); err != nil {
-				return err
-			}
-		}
-		color[name] = black
-		order = append(order, name)
-		return nil
-	}
 	names := make([]string, 0, len(setups))
 	for n := range setups {
 		names = append(names, n)
 	}
-	sort.Strings(names)
-	for _, n := range names {
-		if err := visit(n); err != nil {
-			return nil, err
-		}
-	}
-	return order, nil
+	return topoOrder(names, func(n string) ([]string, bool) {
+		s, ok := setups[n]
+		return s.Use, ok
+	})
 }
 
 // ============================================================================
-// Coverage (unchanged from 5a)
+// Coverage
 // ============================================================================
 
 func validateCoverage(
@@ -657,6 +645,12 @@ func validateCoverage(
 		}
 		for _, u := range sc.Setup {
 			markSetup(u)
+		}
+	}
+
+	for name := range s.Setup {
+		if _, ok := activeSetups[name]; !ok {
+			warns = append(warns, fmt.Sprintf("setup %q is not used by any active scenario", name))
 		}
 	}
 
@@ -702,7 +696,7 @@ func queryHasKey(rawQuery, key string) bool {
 	if rawQuery == "" {
 		return false
 	}
-	for _, kv := range strings.Split(rawQuery, "&") {
+	for kv := range strings.SplitSeq(rawQuery, "&") {
 		name, _, _ := strings.Cut(kv, "=")
 		if name == key {
 			return true

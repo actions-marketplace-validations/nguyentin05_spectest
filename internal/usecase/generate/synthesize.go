@@ -2,10 +2,19 @@ package generate
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/nguyentin05/spectest/internal/domain"
+)
+
+const (
+	scenarioBatchMax   = 4
+	scenarioBatchChars = 20_000
 )
 
 // synthesizedSetup is the LLM output for one setup call.
@@ -14,203 +23,455 @@ type synthesizedSetup struct {
 	Steps []domain.Step  `json:"steps"`
 }
 
-// synthesizedScenario is the LLM output for one scenario call.
-// Strict decode: a stray "vars" field is an error.
 type synthesizedScenario struct {
+	ID    string        `json:"id"`
 	Steps []domain.Step `json:"steps"`
 }
 
-// synthesizeInitial produces the full suite by calling the LLM once per
-// setup (in topo order) and once per scenario (sorted by ID).
-func (g *Generator) synthesizeInitial(
-	ctx context.Context, src *domain.SourceSet, plan *initialPlan,
-) (*domain.Suite, error) {
-	ordered, err := planSetupsTopo(plan.Setups)
-	if err != nil {
-		return nil, fmt.Errorf("topo setup order: %w", err)
-	}
+type synthesizedBatch struct {
+	Scenarios []synthesizedScenario `json:"scenarios"`
+}
 
-	srcByKey := make(map[string]domain.API, len(src.APIs))
+// dependencySetup carries a setup's name and body together for prompt payloads.
+type dependencySetup struct {
+	Name  string
+	Setup domain.Setup
+}
+
+// promptInfo is the context shared by every synthesis prompt.
+type promptInfo struct {
+	Notes       []promptNote
+	Assumptions []assumption
+	Warnings    []string
+}
+
+// synthCtx holds the read-only state of the synthesis stages.
+type synthCtx struct {
+	g        *Generator
+	apis     map[string]domain.API
+	servers  map[string]struct{}
+	plan     *fullPlan
+	groups   []apiGroup
+	seedBase map[string]struct{}
+	bareIdx  map[string][]string
+	info     promptInfo
+}
+
+func newSynthCtx(g *Generator, src *domain.SourceSet, plan *fullPlan, groups []apiGroup, info promptInfo) *synthCtx {
+	apis := make(map[string]domain.API, len(src.APIs))
 	for _, a := range src.APIs {
-		srcByKey[a.Key] = a
+		apis[a.Key] = a
 	}
-
-	setups := make(map[string]domain.Setup, len(ordered))
-	for _, ps := range ordered {
-		setup, err := g.synthesizeSetup(ctx, srcByKey, plan, ps, setups)
-		if err != nil {
-			return nil, fmt.Errorf("synthesize setup %q: %w", ps.Name, err)
-		}
-		setups[ps.Name] = setup
+	servers := make(map[string]struct{}, len(src.Servers))
+	for _, s := range src.Servers {
+		servers[s] = struct{}{}
 	}
-
-	sorted := append([]planScenario(nil), plan.Scenarios...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
-
-	scenarios := make([]domain.Scenario, 0, len(sorted))
-	for _, ps := range sorted {
-		sc, err := g.synthesizeScenario(ctx, srcByKey, plan, ps, setups)
-		if err != nil {
-			return nil, fmt.Errorf("synthesize scenario %q: %w", ps.ID, err)
-		}
-		scenarios = append(scenarios, sc)
+	seedBase, bareIdx := seedScope(plan.Seed)
+	return &synthCtx{
+		g: g, apis: apis, servers: servers, plan: plan, groups: groups,
+		seedBase: seedBase, bareIdx: bareIdx, info: info,
 	}
-
-	return assembleSuite(src, plan, setups, scenarios)
 }
 
-// synthesizeSetup calls the LLM for one setup outline.
-func (g *Generator) synthesizeSetup(
+// parentScope is the seed scope plus the final scope of every used setup.
+// Each setup's final scope already contains its own dependencies.
+func (sc *synthCtx) parentScope(use []string, scopes map[string]map[string]struct{}) map[string]struct{} {
+	scope := cloneScope(sc.seedBase)
+	for _, u := range use {
+		if s, ok := scopes[u]; ok {
+			mergeScope(scope, s)
+		}
+	}
+	return scope
+}
+
+// ============================================================================
+// Setups — sequential, catalog frozen after each one
+// ============================================================================
+
+// synthesizeSetups writes every setup one at a time in dependency order, common
+// setups first. After a setup succeeds its vars/steps/saves are frozen; later
+// setups and all scenarios only read them.
+func (sc *synthCtx) synthesizeSetups(
 	ctx context.Context,
-	srcByKey map[string]domain.API,
-	plan *initialPlan,
-	ps planSetup,
-	done map[string]domain.Setup,
-) (domain.Setup, error) {
-	allowed, err := allowedAPIs(srcByKey, ps.APIs)
-	if err != nil {
-		return domain.Setup{}, err
-	}
-
-	deps := collectDependencySetups(ps.Use, done)
-
-	system, user, err := buildSetupSynthPrompt(plan, ps, deps, allowed)
-	if err != nil {
-		return domain.Setup{}, fmt.Errorf("build prompt: %w", err)
-	}
-
-	out, err := callValidated(ctx, g.llm, "synthesize setup "+ps.Name, system, user,
-		func(v *synthesizedSetup) error { return validateEntitySteps(ps.Name, v.Steps, allowed) })
-	if err != nil {
-		return domain.Setup{}, err
-	}
-
-	return domain.Setup{
-		Use:   append([]string(nil), ps.Use...),
-		Vars:  cloneAnyMap(out.Vars),
-		Steps: out.Steps,
-	}, nil
-}
-
-// synthesizeScenario calls the LLM for one scenario outline.
-func (g *Generator) synthesizeScenario(
-	ctx context.Context,
-	srcByKey map[string]domain.API,
-	plan *initialPlan,
-	ps planScenario,
-	setups map[string]domain.Setup,
-) (domain.Scenario, error) {
-	allowed, err := allowedAPIs(srcByKey, ps.APIs)
-	if err != nil {
-		return domain.Scenario{}, err
-	}
-
-	closure, err := setupClosure(ps.Setup, setups)
-	if err != nil {
-		return domain.Scenario{}, err
-	}
-
-	system, user, err := buildScenarioSynthPrompt(plan, ps, closure, allowed)
-	if err != nil {
-		return domain.Scenario{}, fmt.Errorf("build prompt: %w", err)
-	}
-
-	out, err := callValidated(ctx, g.llm, "synthesize scenario "+ps.ID, system, user,
-		func(v *synthesizedScenario) error { return validateEntitySteps(ps.ID, v.Steps, allowed) })
-	if err != nil {
-		return domain.Scenario{}, err
-	}
-
-	return domain.Scenario{
-		ID:     ps.ID,
-		Name:   ps.Name,
-		Setup:  append([]string(nil), ps.Setup...),
-		Steps:  out.Steps,
-		Locked: false,
-		Skip:   "",
-	}, nil
-}
-
-// validateEntitySteps performs shallow checks only. Full rule enforcement
-// (variable resolution, body schema, status ranges) is deferred to
-// validateSuite in the next step.
-func validateEntitySteps(owner string, steps []domain.Step, allowed map[string]domain.API) error {
-	if len(steps) == 0 {
-		return fmt.Errorf("%s: steps must not be empty", owner)
-	}
-	for i, s := range steps {
-		if s.Call == "" {
-			return fmt.Errorf("%s: step %d: call is empty", owner, i)
-		}
-		if s.Expect <= 0 {
-			return fmt.Errorf("%s: step %d: expect must be > 0", owner, i)
-		}
-		if _, found, err := matchAPI(allowed, s.Call); err != nil {
-			return fmt.Errorf("%s: step %d: %w", owner, i, err)
-		} else if !found {
-			return fmt.Errorf("%s: step %d: call %q not in entity apis", owner, i, s.Call)
-		}
-	}
-	return nil
-}
-
-// planSetupsTopo returns setups in dependency order, tie-broken by name.
-// Cycles are rejected (validateInitialPlan should catch them first).
-func planSetupsTopo(setups []planSetup) ([]planSetup, error) {
-	byName := make(map[string]planSetup, len(setups))
-	for _, s := range setups {
+) (map[string]domain.Setup, map[string]map[string]struct{}, error) {
+	byName := make(map[string]planSetup, len(sc.plan.Setups))
+	names := make([]string, 0, len(sc.plan.Setups))
+	for _, s := range sc.plan.Setups {
 		byName[s.Name] = s
-	}
-	const (
-		white = 0
-		gray  = 1
-		black = 2
-	)
-	color := map[string]int{}
-	var order []planSetup
-	var visit func(name string) error
-	visit = func(name string) error {
-		switch color[name] {
-		case gray:
-			return fmt.Errorf("cycle at %q", name)
-		case black:
-			return nil
-		}
-		s, ok := byName[name]
-		if !ok {
-			return fmt.Errorf("missing setup %q", name)
-		}
-		color[name] = gray
-		deps := append([]string(nil), s.Use...)
-		sort.Strings(deps)
-		for _, d := range deps {
-			if err := visit(d); err != nil {
-				return err
-			}
-		}
-		color[name] = black
-		order = append(order, s)
-		return nil
-	}
-	names := make([]string, 0, len(setups))
-	for _, s := range setups {
 		names = append(names, s.Name)
 	}
-	sort.Strings(names)
-	for _, n := range names {
-		if err := visit(n); err != nil {
-			return nil, err
-		}
+	order, err := topoOrder(names, func(n string) ([]string, bool) {
+		s, ok := byName[n]
+		return s.Use, ok
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("setup order: %w", err)
 	}
-	return order, nil
+	// Common setups only depend on common setups, so moving them first keeps
+	// the order valid.
+	sort.SliceStable(order, func(i, j int) bool {
+		return byName[order[i]].Group == "" && byName[order[j]].Group != ""
+	})
+
+	setups := make(map[string]domain.Setup, len(order))
+	scopes := make(map[string]map[string]struct{}, len(order))
+	for _, name := range order {
+		ps := byName[name]
+		allowed, err := allowedAPIs(sc.apis, ps.APIs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("setup %q: %w", name, err)
+		}
+		parent := sc.parentScope(ps.Use, scopes)
+		deps := collectDependencySetups(ps.Use, setups)
+
+		system, user, err := buildSetupPrompt(sc, ps, deps, allowed)
+		if err != nil {
+			return nil, nil, fmt.Errorf("setup %q: build prompt: %w", name, err)
+		}
+		out, err := callValidated(ctx, sc.g.llm, "synthesize setup "+name, system, user,
+			func(v *synthesizedSetup) error {
+				errs, _ := sc.checkSetup(ps, v, allowed, parent)
+				return errors.Join(errs...)
+			})
+		if err != nil {
+			return nil, nil, err
+		}
+		_, final := sc.checkSetup(ps, out, allowed, parent)
+
+		setups[name] = domain.Setup{
+			Use:   slices.Clone(ps.Use),
+			Vars:  cloneVars(out.Vars),
+			Steps: cloneSteps(out.Steps),
+		}
+		scopes[name] = final
+	}
+	return setups, scopes, nil
 }
 
-// allowedAPIs builds a map from the given key list, erroring if any key is
-// missing from the full source map.
-func allowedAPIs(srcByKey map[string]domain.API, keys []string) (map[string]domain.API, error) {
+// checkSetup runs the full step validation on one synthesized setup and also
+// requires that it calls every API it declared.
+func (sc *synthCtx) checkSetup(
+	ps planSetup, v *synthesizedSetup, allowed map[string]domain.API, parent map[string]struct{},
+) ([]error, map[string]struct{}) {
+	var errs []error
+	for k, val := range v.Vars {
+		errs = append(errs, checkTemplates(parent, sc.bareIdx,
+			fmt.Sprintf("setup %q var %q", ps.Name, k), val)...)
+	}
+	stepScope := cloneScope(parent)
+	for k := range v.Vars {
+		stepScope[k] = struct{}{}
+	}
+	stepErrs, final := validateStepsDeep("setup "+ps.Name, v.Steps, allowed, sc.servers, stepScope, sc.bareIdx)
+	errs = append(errs, stepErrs...)
+
+	called := calledKeys(v.Steps, allowed)
+	for _, k := range ps.APIs {
+		if _, ok := called[k]; !ok {
+			errs = append(errs, fmt.Errorf("setup %q must call api %q", ps.Name, k))
+		}
+	}
+	return errs, final
+}
+
+// ============================================================================
+// Scenarios — batched, bounded parallel
+// ============================================================================
+
+type scenarioJob struct {
+	ps       planScenario
+	allowed  map[string]domain.API
+	closure  []dependencySetup
+	parent   map[string]struct{}
+	mustCall []string
+}
+
+func (sc *synthCtx) newJob(
+	ps planScenario, setups map[string]domain.Setup, scopes map[string]map[string]struct{}, mustCall []string,
+) (scenarioJob, error) {
+	allowed, err := allowedAPIs(sc.apis, ps.APIs)
+	if err != nil {
+		return scenarioJob{}, fmt.Errorf("scenario %q: %w", ps.ID, err)
+	}
+	closure, err := setupClosure(ps.Setup, setups)
+	if err != nil {
+		return scenarioJob{}, fmt.Errorf("scenario %q: %w", ps.ID, err)
+	}
+	return scenarioJob{
+		ps: ps, allowed: allowed, closure: closure,
+		parent: sc.parentScope(ps.Setup, scopes), mustCall: mustCall,
+	}, nil
+}
+
+func jobSize(j scenarioJob) int {
+	b, _ := json.Marshal(newPromptScenarioJob(j))
+	return len(b)
+}
+
+// makeBatches groups jobs group by group (jobs arrive already ordered), at most
+// scenarioBatchMax per batch or scenarioBatchChars of estimated input.
+func makeBatches(jobs []scenarioJob) [][]scenarioJob {
+	var batches [][]scenarioJob
+	var cur []scenarioJob
+	size := 0
+	for _, j := range jobs {
+		js := jobSize(j)
+		newGroup := len(cur) > 0 && cur[0].ps.Group != j.ps.Group
+		if len(cur) > 0 && (newGroup || len(cur) >= scenarioBatchMax || size+js > scenarioBatchChars) {
+			batches = append(batches, cur)
+			cur, size = nil, 0
+		}
+		cur = append(cur, j)
+		size += js
+	}
+	if len(cur) > 0 {
+		batches = append(batches, cur)
+	}
+	return batches
+}
+
+// orderedScenarios returns the plan's scenarios group by group, by ID inside a
+// group, so batches are stable.
+func (sc *synthCtx) orderedScenarios() []planScenario {
+	rank := make(map[string]int, len(sc.groups))
+	for i, g := range sc.groups {
+		rank[g.ID] = i
+	}
+	out := slices.Clone(sc.plan.Scenarios)
+	sort.SliceStable(out, func(i, j int) bool {
+		if ri, rj := rank[out[i].Group], rank[out[j].Group]; ri != rj {
+			return ri < rj
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// synthesizeScenarios writes the given scenarios in batches. Batches run in
+// parallel, bounded by concurrency; the setup catalog is read-only here.
+func (sc *synthCtx) synthesizeScenarios(
+	ctx context.Context,
+	concurrency int,
+	list []planScenario,
+	setups map[string]domain.Setup,
+	scopes map[string]map[string]struct{},
+	mustCall map[string][]string,
+) ([]domain.Scenario, error) {
+	jobs := make([]scenarioJob, 0, len(list))
+	for _, ps := range list {
+		j, err := sc.newJob(ps, setups, scopes, mustCall[ps.ID])
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, j)
+	}
+
+	parts, err := runBounded(ctx, makeBatches(jobs), concurrency,
+		func(ctx context.Context, _ int, batch []scenarioJob) ([]domain.Scenario, error) {
+			res, err := sc.synthBatch(ctx, batch)
+			if err == nil || len(batch) == 1 || ctx.Err() != nil {
+				return res, err
+			}
+			// The batch failed even after its repair: retry each scenario on
+			// its own so one bad scenario does not sink its neighbours.
+			res = res[:0]
+			for _, j := range batch {
+				one, e := sc.synthBatch(ctx, []scenarioJob{j})
+				if e != nil {
+					return nil, errors.Join(err, e)
+				}
+				res = append(res, one...)
+			}
+			return res, nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("synthesize scenarios: %w", err)
+	}
+
+	var out []domain.Scenario
+	for _, p := range parts {
+		out = append(out, p...)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+func (sc *synthCtx) synthBatch(ctx context.Context, jobs []scenarioJob) ([]domain.Scenario, error) {
+	system, user, err := buildScenarioBatchPrompt(sc, jobs)
+	if err != nil {
+		return nil, fmt.Errorf("build prompt: %w", err)
+	}
+	ids := make([]string, len(jobs))
+	for i, j := range jobs {
+		ids[i] = j.ps.ID
+	}
+	stage := "synthesize scenarios " + strings.Join(ids, ",")
+
+	out, err := callValidated(ctx, sc.g.llm, stage, system, user,
+		func(v *synthesizedBatch) error { return sc.checkBatch(v, jobs) })
+	if err != nil {
+		return nil, err
+	}
+
+	byID := make(map[string]synthesizedScenario, len(out.Scenarios))
+	for _, s := range out.Scenarios {
+		byID[s.ID] = s
+	}
+	res := make([]domain.Scenario, 0, len(jobs))
+	for _, j := range jobs {
+		res = append(res, domain.Scenario{
+			ID:    j.ps.ID,
+			Name:  j.ps.Name,
+			Setup: slices.Clone(j.ps.Setup),
+			Steps: cloneSteps(byID[j.ps.ID].Steps),
+		})
+	}
+	return res, nil
+}
+
+func (sc *synthCtx) checkBatch(v *synthesizedBatch, jobs []scenarioJob) error {
+	var errs []error
+	want := make(map[string]struct{}, len(jobs))
+	for _, j := range jobs {
+		want[j.ps.ID] = struct{}{}
+	}
+	got := make(map[string]synthesizedScenario, len(v.Scenarios))
+	for _, s := range v.Scenarios {
+		if _, ok := want[s.ID]; !ok {
+			errs = append(errs, fmt.Errorf("unexpected scenario id %q", s.ID))
+			continue
+		}
+		if _, dup := got[s.ID]; dup {
+			errs = append(errs, fmt.Errorf("duplicate scenario id %q", s.ID))
+			continue
+		}
+		got[s.ID] = s
+	}
+	for _, j := range jobs {
+		s, ok := got[j.ps.ID]
+		if !ok {
+			errs = append(errs, fmt.Errorf("missing scenario %q", j.ps.ID))
+			continue
+		}
+		stepErrs, _ := validateStepsDeep("scenario "+j.ps.ID, s.Steps, j.allowed, sc.servers, j.parent, sc.bareIdx)
+		errs = append(errs, stepErrs...)
+		called := calledKeys(s.Steps, j.allowed)
+		for _, k := range j.mustCall {
+			if _, ok := called[k]; !ok {
+				errs = append(errs, fmt.Errorf("scenario %q must call api %q", j.ps.ID, k))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ============================================================================
+// Coverage — repair the scenario that declared a missing API, once
+// ============================================================================
+
+// repairCoverage makes sure every API is called by some scenario or setup.
+// Setups already call everything they declare (checkSetup), so a gap can only
+// come from a scenario. Each such scenario is rewritten once with a must_call
+// list. Nothing new is invented: if no scenario declared the missing API, or it
+// is still missing afterwards, the run aborts.
+func (sc *synthCtx) repairCoverage(
+	ctx context.Context,
+	concurrency int,
+	scenarios []domain.Scenario,
+	setups map[string]domain.Setup,
+	scopes map[string]map[string]struct{},
+) ([]domain.Scenario, error) {
+	missing := sc.missingAPIs(scenarios, setups)
+	if len(missing) == 0 {
+		return scenarios, nil
+	}
+
+	mustCall := map[string][]string{}
+	for _, key := range missing {
+		owner := ""
+		for _, ps := range sc.orderedScenarios() {
+			if slices.Contains(ps.APIs, key) {
+				owner = ps.ID
+				break
+			}
+		}
+		if owner == "" {
+			return nil, fmt.Errorf("coverage: api %q is not called and no scenario declares it", key)
+		}
+		mustCall[owner] = append(mustCall[owner], key)
+	}
+
+	var redo []planScenario
+	for _, ps := range sc.orderedScenarios() {
+		if _, ok := mustCall[ps.ID]; ok {
+			redo = append(redo, ps)
+		}
+	}
+	repaired, err := sc.synthesizeScenarios(ctx, concurrency, redo, setups, scopes, mustCall)
+	if err != nil {
+		return nil, fmt.Errorf("coverage repair: %w", err)
+	}
+
+	byID := make(map[string]domain.Scenario, len(repaired))
+	for _, s := range repaired {
+		byID[s.ID] = s
+	}
+	out := slices.Clone(scenarios)
+	for i, s := range out {
+		if r, ok := byID[s.ID]; ok {
+			out[i] = r
+		}
+	}
+
+	if still := sc.missingAPIs(out, setups); len(still) > 0 {
+		return nil, fmt.Errorf("coverage: apis still not called after repair: %s", strings.Join(still, ", "))
+	}
+	return out, nil
+}
+
+func (sc *synthCtx) missingAPIs(scenarios []domain.Scenario, setups map[string]domain.Setup) []string {
+	covered := map[string]struct{}{}
+	for _, s := range scenarios {
+		for k := range calledKeys(s.Steps, sc.apis) {
+			covered[k] = struct{}{}
+		}
+	}
+	for _, s := range setups {
+		for k := range calledKeys(s.Steps, sc.apis) {
+			covered[k] = struct{}{}
+		}
+	}
+	var missing []string
+	for k := range sc.apis {
+		if _, ok := covered[k]; !ok {
+			missing = append(missing, k)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+// calledKeys returns the API keys that steps call, resolved against lookup.
+func calledKeys(steps []domain.Step, lookup map[string]domain.API) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, st := range steps {
+		if api, found, err := matchAPI(lookup, st.Call); err == nil && found {
+			out[api.Key] = struct{}{}
+		}
+	}
+	return out
+}
+
+// allowedAPIs builds a map from keys, erroring when a key is not in the source.
+func allowedAPIs(all map[string]domain.API, keys []string) (map[string]domain.API, error) {
 	out := make(map[string]domain.API, len(keys))
 	for _, k := range keys {
-		a, ok := srcByKey[k]
+		a, ok := all[k]
 		if !ok {
 			return nil, fmt.Errorf("api key %q not in source", k)
 		}
@@ -219,8 +480,8 @@ func allowedAPIs(srcByKey map[string]domain.API, keys []string) (map[string]doma
 	return out, nil
 }
 
-// collectDependencySetups returns the closure of setups reachable via use,
-// preserving topo order.
+// collectDependencySetups returns the transitive closure of setups reachable
+// through use, dependencies first.
 func collectDependencySetups(names []string, done map[string]domain.Setup) []dependencySetup {
 	seen := map[string]struct{}{}
 	var out []dependencySetup
@@ -245,43 +506,24 @@ func collectDependencySetups(names []string, done map[string]domain.Setup) []dep
 	return out
 }
 
-// setupClosure returns the transitive closure of setups used by a scenario.
+// setupClosure is collectDependencySetups that fails on an unknown setup.
 func setupClosure(names []string, setups map[string]domain.Setup) ([]dependencySetup, error) {
-	seen := map[string]struct{}{}
-	var out []dependencySetup
-	var visit func(n string) error
-	visit = func(n string) error {
-		if _, ok := seen[n]; ok {
-			return nil
-		}
-		s, ok := setups[n]
-		if !ok {
-			return fmt.Errorf("setup %q not found", n)
-		}
-		seen[n] = struct{}{}
-		for _, u := range s.Use {
-			if err := visit(u); err != nil {
-				return err
-			}
-		}
-		out = append(out, dependencySetup{Name: n, Setup: s})
-		return nil
-	}
 	for _, n := range names {
-		if err := visit(n); err != nil {
-			return nil, err
+		if _, ok := setups[n]; !ok {
+			return nil, fmt.Errorf("setup %q not found", n)
 		}
 	}
-	return out, nil
+	return collectDependencySetups(names, setups), nil
 }
 
 // assembleSuite merges the plan and synthesized content into a domain.Suite.
 func assembleSuite(
 	src *domain.SourceSet,
-	plan *initialPlan,
+	plan *fullPlan,
 	setups map[string]domain.Setup,
 	scenarios []domain.Scenario,
-) (*domain.Suite, error) {
+	analysis string,
+) *domain.Suite {
 	apiKeys := make([]string, 0, len(src.APIs))
 	for _, a := range src.APIs {
 		apiKeys = append(apiKeys, a.Key)
@@ -290,50 +532,17 @@ func assembleSuite(
 
 	seed := make(map[string]domain.Seed, len(plan.Seed))
 	for k, v := range plan.Seed {
-		seed[k] = domain.Seed{Vars: cloneAnyMap(v.Vars)}
+		seed[k] = domain.Seed{Vars: cloneVars(v.Vars)}
 	}
 
 	return &domain.Suite{
 		Version:   1,
-		Servers:   append([]string(nil), src.Servers...),
+		Input:     src.Input,
+		Servers:   slices.Clone(src.Servers),
 		APIs:      apiKeys,
-		Analysis:  plan.Analysis,
+		Analysis:  analysis,
 		Seed:      seed,
 		Setup:     setups,
 		Scenarios: scenarios,
-	}, nil
-}
-
-// cloneAnyMap deep-copies a map[string]any. Nested maps are cloned; slices are
-// copied shallowly (sufficient for suite data).
-func cloneAnyMap(m map[string]any) map[string]any {
-	if m == nil {
-		return nil
 	}
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = cloneAny(v)
-	}
-	return out
-}
-
-func cloneAny(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		return cloneAnyMap(t)
-	case []any:
-		cp := make([]any, len(t))
-		for i, e := range t {
-			cp[i] = cloneAny(e)
-		}
-		return cp
-	default:
-		return v
-	}
-}
-
-// dependencySetup carries a setup's name and body together for prompt payload.
-type dependencySetup struct {
-	Name  string
-	Setup domain.Setup
 }

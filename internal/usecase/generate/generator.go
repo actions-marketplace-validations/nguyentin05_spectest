@@ -2,14 +2,13 @@ package generate
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
+	"sort"
 
 	"github.com/nguyentin05/spectest/internal/domain"
 )
 
-// Generator is the facade for the generate pipeline.
+// Generator orchestrates the v3 generate pipeline.
 type Generator struct {
 	llm     domain.LLMService
 	sources domain.SourceLoader
@@ -23,7 +22,12 @@ func NewGenerator(
 	store domain.SuiteStore,
 	clock domain.Clock,
 ) *Generator {
-	return &Generator{llm: llm, sources: sources, store: store, clock: clock}
+	return &Generator{
+		llm:     llm,
+		sources: sources,
+		store:   store,
+		clock:   clock,
+	}
 }
 
 // Request is the input to Execute.
@@ -32,6 +36,7 @@ type Request struct {
 	RequirementsPath string
 	OutputDir        string
 	DryRun           bool
+	Concurrency      int
 }
 
 // Result is what the CLI prints.
@@ -39,10 +44,6 @@ type Result struct {
 	Mode           Mode
 	Servers        []string
 	APITotal       int
-	APIAdded       int
-	APIChanged     int
-	APIRemoved     int
-	ManualEdits    int
 	Warnings       []string
 	SuitePath      string
 	LogPath        string
@@ -50,46 +51,89 @@ type Result struct {
 	NoFilesWritten bool
 }
 
-// Execute runs the pipeline for a first run (initial).
-// Flow: load → plan → synthesize → validate → persist.
+// Execute runs the entire v3 pipeline.
+// Flow khớp với sơ đồ: Chọn nguồn -> Parse OpenAPI -> Nhóm -> Notes -> Global plan ->
+// Outline -> Viết setup -> Viết scenario -> Coverage -> Analysis -> Ghép file.
 func (g *Generator) Execute(ctx context.Context, req Request) (*Result, error) {
-	// 1. Load sources.
-	src, err := g.sources.Load(ctx, req.APIs, req.RequirementsPath)
+	// ⓪ + ① CHỌN NGUỒN + PARSE OPENAPI
+	src, err := g.resolveSources(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("load sources: %w", err)
+		return nil, err
 	}
 
-	fmt.Println("=== Normalized APIs ===")
-	for i, api := range src.APIs {
-		fmt.Printf("[%d] %s\n", i+1, api.Key)
-	}
-	fmt.Printf("Total: %d APIs across %d servers (%v)\n\n",
-		len(src.APIs), len(src.Servers), src.Servers)
+	// ② CHỮ KÝ API + NHÓM (Server + Resource)
+	groups := buildGroups(src)
 
-	if g.llm == nil {
-		return nil, fmt.Errorf("llm service is not configured")
+	// ③ NOTES + API_MENTIONS (Chỉ chạy khi có --req)
+	var notesRes *notesResult
+	if src.Input == domain.InputBoth {
+		notesRes, err = g.extractNotes(ctx, src, groups, req.Concurrency)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// 2. Plan initial.
-	fmt.Printf("=== Plan Initial (llm=%s) ===\n", g.llm.Name())
-	plan, err := g.planInitial(ctx, src)
+	// ④ BẢN ĐỒ API (Chuẩn bị input cho plan)
+	in := newPlanInput(src, groups, notesRes)
+
+	// ⑤ GLOBAL PLAN (Seed, Common setups, Assumptions)
+	gp, globalWarns, err := g.planGlobal(ctx, in)
 	if err != nil {
-		return nil, fmt.Errorf("plan initial: %w", err)
+		return nil, err
 	}
-	pretty, _ := json.MarshalIndent(plan, "", "  ")
-	fmt.Println(string(pretty))
-	fmt.Printf("\nPlan summary: %d setups, %d scenarios | validation PASSED\n\n",
-		len(plan.Setups), len(plan.Scenarios))
 
-	// 3. Synthesize.
-	fmt.Println("=== Synthesize (setup → scenario) ===")
-	suite, err := g.synthesizeInitial(ctx, src, plan)
+	// ⑥ OUTLINE THEO NHÓM (Chạy song song theo group)
+	c := newOutlineCtx(in, gp)
+	plan, err := g.planOutline(ctx, c, req.Concurrency)
 	if err != nil {
-		return nil, fmt.Errorf("synthesize: %w", err)
+		return nil, err
 	}
 
-	// 4. Validate.
-	fmt.Println("=== Validate Suite ===")
+	// ⑦ VIẾT SETUP & SCENARIO (Setup tuần tự, Scenario song song theo lô)
+	sc := newSynthCtx(g, src, plan, groups, promptInfo{
+		Notes:       promptNotesFrom(in.Notes),
+		Assumptions: gp.Assumptions,
+		Warnings:    in.warningMessages(),
+	})
+
+	// Setup chạy tuần tự (đóng băng catalog)
+	setups, scopes, err := sc.synthesizeSetups(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Scenario chạy song song
+	scenarios, err := sc.synthesizeScenarios(ctx, req.Concurrency, plan.Scenarios, setups, scopes, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// ⑧ KIỂM TRA COVERAGE (Repair entity nếu thiếu API)
+	scenarios, err = sc.repairCoverage(ctx, req.Concurrency, scenarios, setups, scopes)
+	if err != nil {
+		return nil, err
+	}
+
+	// ⑨ ANALYSIS (Sinh narrative + Code quản lý block warnings/assumptions)
+	var sw []sourceWarning
+	if notesRes != nil {
+		sw = notesRes.SourceWarnings
+	}
+	ai := analysisInput{
+		src:       src,
+		plan:      plan,
+		scenarios: scenarios,
+		notes:     in.Notes,
+		warnings:  sw,
+		groups:    groups,
+	}
+	analysisStr, err := g.writeAnalysis(ctx, ai)
+	if err != nil {
+		return nil, err
+	}
+
+	// ⑩ GHÉP FILE & VALIDATE
+	suite := assembleSuite(src, plan, setups, scenarios, analysisStr)
 	vr := validateSuite(suite, src, validationOptions{
 		RequireAnalysis:  true,
 		RequiredCoverage: allAPIKeys(src),
@@ -97,68 +141,53 @@ func (g *Generator) Execute(ctx context.Context, req Request) (*Result, error) {
 		WarnUncovered:    true,
 	})
 	if err := vr.Err(); err != nil {
-		for _, e := range vr.Errors {
-			fmt.Printf("  ✗ %v\n", e)
-		}
-		return nil, fmt.Errorf("validate: %w", err)
-	}
-	fmt.Println("Validation PASSED")
-	for _, w := range vr.Warnings {
-		fmt.Printf("  ⚠ %s\n", w)
-	}
-	fmt.Printf("\nSynthesis summary: %d setups, %d scenarios\n",
-		len(suite.Setup), len(suite.Scenarios))
-	fmt.Printf("Suite hash: %s\n\n", suiteHash(suite))
-
-	fmt.Println("=== Assembled Suite (JSON) ===")
-	suiteJSON, _ := json.MarshalIndent(suite, "", "  ")
-	fmt.Println(string(suiteJSON))
-	fmt.Println()
-
-	// 5. Build file set (normalize + base entry + track).
-	files, err := g.buildInitialFileSet(src, suite)
-	if err != nil {
-		return nil, fmt.Errorf("build files: %w", err)
+		return nil, fmt.Errorf("validate suite: %w", err)
 	}
 
-	// 6. Persist.
-	fmt.Println("=== Persist ===")
+	// Chuẩn bị file set (tạo base log + track)
+	var mentions []domain.APIMention
+	if notesRes != nil {
+		mentions = notesRes.Mentions
+	}
+	files := g.buildInitialFileSet(src, suite, mentions)
+
+	// ⑪ PERSIST (Atomic write)
 	writeOpts := domain.WriteOptions{Suite: true, Log: true, Track: true}
 	if err := g.persist(ctx, req, files, writeOpts); err != nil {
 		return nil, fmt.Errorf("persist: %w", err)
 	}
 
-	suitePath := joinDisplayPath(req.OutputDir, "spectest.yaml")
-	logPath := joinDisplayPath(req.OutputDir, "spectest.log.yaml")
-	trackPath := joinDisplayPath(req.OutputDir, "spectest.track.yaml")
-
-	if req.DryRun {
-		fmt.Println("  [dry-run] no files written")
-	} else {
-		fmt.Printf("  ✓ %s\n", suitePath)
-		fmt.Printf("  ✓ %s\n", logPath)
-		fmt.Printf("  ✓ %s\n", trackPath)
+	// Gom tất cả warning để in ra CLI
+	var allWarns []string
+	if notesRes != nil {
+		for _, w := range notesRes.SourceWarnings {
+			allWarns = append(allWarns, w.Message)
+		}
+		allWarns = append(allWarns, notesRes.Warnings...)
 	}
+	allWarns = append(allWarns, globalWarns...)
+	allWarns = append(allWarns, plan.Warnings...)
+	allWarns = append(allWarns, vr.Warnings...)
 
-	mode := ModeInitial
-	if req.DryRun {
-		mode = ModeDryRun
+	// Dedupe & Sort warnings
+	seenWarn := make(map[string]struct{})
+	var uniqueWarns []string
+	for _, w := range allWarns {
+		if _, ok := seenWarn[w]; !ok {
+			seenWarn[w] = struct{}{}
+			uniqueWarns = append(uniqueWarns, w)
+		}
 	}
+	sort.Strings(uniqueWarns)
 
 	return &Result{
-		Mode:           mode,
+		Mode:           ModeInitial,
 		Servers:        src.Servers,
 		APITotal:       len(src.APIs),
-		Warnings:       vr.Warnings,
-		SuitePath:      suitePath,
-		LogPath:        logPath,
-		TrackPath:      trackPath,
+		Warnings:       uniqueWarns,
+		SuitePath:      joinDisplayPath(req.OutputDir, "spectest.yaml"),
+		LogPath:        joinDisplayPath(req.OutputDir, "spectest.log.yaml"),
+		TrackPath:      joinDisplayPath(req.OutputDir, "spectest.track.yaml"),
 		NoFilesWritten: req.DryRun,
 	}, nil
 }
-
-// realClock is a temporary domain.Clock implementation.
-// Sẽ được thay bằng internal/platform/clock khi cần.
-type realClock struct{}
-
-func (realClock) Now() time.Time { return time.Now() }

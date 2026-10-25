@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"slices"
 	"fmt"
 	"strings"
 
@@ -54,16 +55,12 @@ func parseCall(raw string) (parsedCall, error) {
 	if !strings.HasPrefix(rest, "/") {
 		return p, fmt.Errorf("call %q path must start with /", raw)
 	}
-	if q := strings.IndexByte(rest, '?'); q >= 0 {
-		p.Path = rest[:q]
-		p.RawQuery = rest[q+1:]
+	if before, after, ok := strings.Cut(rest, "?"); ok {
+		p.Path = before
+		p.RawQuery = after
 	} else {
 		p.Path = rest
 	}
-	if p.Path == "" || p.Path == "/" {
-		return p, fmt.Errorf("call %q path is empty or root-only", raw)
-	}
-
 	return p, nil
 }
 
@@ -84,12 +81,7 @@ func splitCallPath(path string) []string {
 }
 
 func hasEmptySegment(segs []string) bool {
-	for _, s := range segs {
-		if s == "" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(segs, "")
 }
 
 // isTemplateSegment reports whether seg looks like `{name}` (OpenAPI path

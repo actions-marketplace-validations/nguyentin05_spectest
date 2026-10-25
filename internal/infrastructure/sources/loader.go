@@ -104,6 +104,9 @@ func (l *Loader) Load(ctx context.Context, inputs []domain.APIInput, requirement
 			return nil, fmt.Errorf("read requirements file %q: %w", requirementsPath, err)
 		}
 		set.Requirements = &domain.RequirementSource{File: requirementsPath, Raw: string(raw)}
+		set.Input = domain.InputOpenAPI
+	} else {
+		set.Input = domain.InputBoth
 	}
 
 	return set, nil
