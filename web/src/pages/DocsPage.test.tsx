@@ -10,7 +10,7 @@ it("renders a markdown document with a table", async () => {
   expect(screen.getByRole("table")).toBeInTheDocument();
 });
 
-it("shows a friendly 404", async () => {
+it("shows a friendly missing-document state", async () => {
   renderAt("/docs?path=docs/missing.md");
   expect(await screen.findByText("Không tìm thấy tài liệu")).toBeInTheDocument();
   expect(screen.getByText("docs/missing.md")).toBeInTheDocument();

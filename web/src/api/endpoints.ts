@@ -1,6 +1,11 @@
 import { withQuery } from "../lib/url";
 import { apiRequest, apiRequestForm } from "./client";
-import { toLLMConfig, type RawConfig } from "./contracts";
+import {
+  toLLMConfig,
+  toMarkdownResponse,
+  type RawConfig,
+  type RawMarkdown,
+} from "./contracts";
 import type {
   ActionResponse,
   ConfigTestRequest,
@@ -14,7 +19,6 @@ import type {
   HealthcheckResponse,
   HistoryResponse,
   LogsResponse,
-  MarkdownResponse,
   PlanResponse,
   RunReport,
   RunRequest,
@@ -52,7 +56,8 @@ export const api = {
       body: JSON.stringify(body),
     }),
   plan: (path?: string) => apiRequest<PlanResponse>(withQuery("/specs/plan", { path })),
-  history: (dir?: string) => apiRequest<HistoryResponse>(withQuery("/specs/history", { dir })),
+  history: (path?: string) =>
+    apiRequest<HistoryResponse>(withQuery("/specs/history", { path })),
   generate: (body: GenerateRequest) =>
     apiRequest<GenerateResponse | GeneratePendingResponse>("/generate", {
       method: "POST",
@@ -62,5 +67,9 @@ export const api = {
     apiRequest<RunStartResponse>("/run", { method: "POST", body: JSON.stringify(body) }),
   cancelRun: () => apiRequest<ActionResponse>("/run/cancel", { method: "POST" }),
   report: () => apiRequest<RunReport>("/run/report"),
-  markdown: (path: string) => apiRequest<MarkdownResponse>(withQuery("/markdown/read", { path })),
+  markdown: (path: string) =>
+    apiRequest<RawMarkdown>("/markdown/read", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }).then((raw) => toMarkdownResponse(raw, path)),
 };

@@ -1,5 +1,6 @@
 import { screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
+import { createHistoryFixture } from "../mocks/fixtures";
 import { server } from "../mocks/server";
 import { renderAt } from "../test/render";
 
@@ -21,4 +22,36 @@ it("shows an empty state when the log file is missing", async () => {
   );
   renderAt("/history");
   expect(await screen.findByText("Chưa có lịch sử thay đổi")).toBeInTheDocument();
+});
+
+it("loads history from the path query parameter", async () => {
+  let requested: URL | undefined;
+  server.use(
+    http.get("/api/specs/history", ({ request }) => {
+      requested = new URL(request.url);
+      return HttpResponse.json(createHistoryFixture());
+    }),
+  );
+  renderAt("/history?path=tests/spectest.log.yaml");
+  expect(
+    await screen.findByText("API added: POST {order}/api/orders/{id}/cancel"),
+  ).toBeInTheDocument();
+  expect(requested?.searchParams.get("path")).toBe("tests/spectest.log.yaml");
+  expect(requested?.searchParams.has("dir")).toBe(false);
+});
+
+it("lets the backend discover the log when no path is provided", async () => {
+  let requested: URL | undefined;
+  server.use(
+    http.get("/api/specs/history", ({ request }) => {
+      requested = new URL(request.url);
+      return HttpResponse.json(createHistoryFixture());
+    }),
+  );
+  renderAt("/history");
+  expect(
+    await screen.findByText("API added: POST {order}/api/orders/{id}/cancel"),
+  ).toBeInTheDocument();
+  expect(requested?.searchParams.has("path")).toBe(false);
+  expect(requested?.searchParams.has("dir")).toBe(false);
 });

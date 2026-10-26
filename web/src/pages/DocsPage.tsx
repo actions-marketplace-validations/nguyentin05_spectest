@@ -24,7 +24,7 @@ function DocumentView({ path }: { path: string }) {
 
   if (loading) {
     content = <LoadingBlock label="Đang đọc tài liệu…" rows={4} />;
-  } else if (error instanceof ApiError && error.status === 404) {
+  } else if (error instanceof ApiError && (error.status === 400 || error.status === 404)) {
     content = (
       <EmptyState
         title="Không tìm thấy tài liệu"

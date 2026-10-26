@@ -146,8 +146,8 @@ function matches(update: HistoryUpdate, query: string): boolean {
 
 export function HistoryPage() {
   const [params] = useSearchParams();
-  const dir = params.get("dir") ?? "./tests";
-  const { data, error, loading, reload } = useApi(() => api.history(dir), [dir]);
+  const path = params.get("path")?.trim();
+  const { data, error, loading, reload } = useApi(() => api.history(path), [path]);
   const [search, setSearch] = useState("");
   const query = useDebouncedValue(search.trim().toLowerCase());
 
