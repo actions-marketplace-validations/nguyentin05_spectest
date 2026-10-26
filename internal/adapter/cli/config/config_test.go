@@ -11,7 +11,9 @@ import (
 
 func cleanEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	temp := t.TempDir()
+	t.Setenv("HOME", temp)
+	t.Setenv("USERPROFILE", temp)
 	t.Setenv("SPECTEST_PROVIDER", "")
 	t.Setenv("SPECTEST_ENDPOINT", "")
 	t.Setenv("SPECTEST_MODEL", "")

@@ -2,80 +2,19 @@ package generate
 
 import (
 	"bytes"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nguyentin05/spectest/internal/adapter/cli/cmdutil"
+	"github.com/nguyentin05/spectest/internal/infrastructure/suitefile"
 )
 
-const testOpenAPISpec = `openapi: 3.0.3
-info:
-  title: Users Service API
-  version: 1.0.0
-servers:
-  - url: https://api.users.test/v1
-paths:
-  /auth/login:
-    post:
-      summary: User login
-      tags: [Auth]
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                user: { type: string }
-                pass: { type: string }
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token: { type: string }
-  /users:
-    get:
-      summary: List users
-      tags: [Users]
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          description: OK
-components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-`
-
-const testPRD = `# Requirements
-## Section: Users
-Users list must require valid authentication.
-`
-
-func cleanEnv(t *testing.T) {
-	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("SPECTEST_PROVIDER", "")
-	t.Setenv("SPECTEST_ENDPOINT", "")
-	t.Setenv("SPECTEST_MODEL", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
-}
-
-func TestGenerateCmd_Help(t *testing.T) {
-	f := cmdutil.NewFactory()
-	cmd := NewCommand(f)
+func TestGenerateCmd_HelpFlags(t *testing.T) {
+	cmd := NewCommand(cmdutil.NewFactory())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -87,17 +26,111 @@ func TestGenerateCmd_Help(t *testing.T) {
 	}
 
 	got := out.String()
-	for _, flag := range []string{"--api", "--req", "--output", "--export", "--enrich", "--concurrency"} {
+	for _, flag := range []string{"--api", "--req", "--output", "--dry-run", "--mode"} {
 		if !strings.Contains(got, flag) {
-			t.Errorf("expected help output to document flag %q, got:\n%s", flag, got)
+			t.Errorf("expected help output to document %q, got:\n%s", flag, got)
+		}
+	}
+	for _, removed := range []string{"--enrich", "--export", "--concurrency"} {
+		if strings.Contains(got, removed) {
+			t.Errorf("help output must not document removed flag %q, got:\n%s", removed, got)
 		}
 	}
 }
 
-func TestGenerateCmd_MissingAPIFlag(t *testing.T) {
-	cleanEnv(t)
-	f := cmdutil.NewFactory()
-	cmd := NewCommand(f)
+func TestGenerateCmd_UpdateRequiresExistingFiles(t *testing.T) {
+	cmd := NewCommand(cmdutil.NewFactory())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--mode", "update", "--api", "auth=whatever.yaml", "--output", t.TempDir()})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "spectest.yaml") {
+		t.Fatalf("error = %v, want missing spectest.yaml error", err)
+	}
+}
+
+func TestGenerateCmd_InvalidMode(t *testing.T) {
+	cmd := NewCommand(cmdutil.NewFactory())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--mode", "migrate"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "must be init or update") {
+		t.Fatalf("error = %v, want invalid mode", err)
+	}
+	if !strings.Contains(out.String(), "Usage:") {
+		t.Errorf("invalid mode must still print usage, got:\n%s", out.String())
+	}
+}
+
+func TestGenerateCmd_UsesCommandContext(t *testing.T) {
+	cmd := NewCommand(cmdutil.NewFactory())
+	cmd.SetArgs([]string{"--api", "auth=whatever.yaml", "--output", t.TempDir()})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := cmd.ExecuteContext(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+}
+
+func TestGenerateCmd_RejectsPositionalArgs(t *testing.T) {
+	cmd := NewCommand(cmdutil.NewFactory())
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"auth=openapi.yaml"})
+
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected positional argument to be rejected")
+	}
+}
+
+func TestGenerateCmd_InitDeclineLeavesFilesUntouched(t *testing.T) {
+	dir := t.TempDir()
+	suitePath := filepath.Join(dir, suitefile.SuiteFileName)
+	if err := os.WriteFile(suitePath, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewCommand(cmdutil.NewFactory())
+	cmd.SetIn(strings.NewReader("n\n"))
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--api", "auth=whatever.yaml", "--output", dir})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "aborted") {
+		t.Fatalf("error = %v, want abort", err)
+	}
+	got, _ := os.ReadFile(suitePath)
+	if string(got) != "keep" {
+		t.Fatalf("suite changed to %q, want keep", got)
+	}
+	if !strings.Contains(out.String(), "Overwrite") {
+		t.Fatal("expected confirmation prompt")
+	}
+	if !strings.HasSuffix(out.String(), "[y/N] \n") {
+		t.Fatalf("prompt output = %q, want a newline after the prompt", out.String())
+	}
+	if !strings.Contains(errOut.String(), "aborted") {
+		t.Fatalf("stderr = %q, want abort message", errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	if strings.Contains(combined, "Usage:") {
+		t.Fatalf("decline must not print usage, got:\n%s", combined)
+	}
+}
+
+func TestGenerateCmd_MissingAPI(t *testing.T) {
+	cmd := NewCommand(cmdutil.NewFactory())
 
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -106,153 +139,9 @@ func TestGenerateCmd_MissingAPIFlag(t *testing.T) {
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--api (-a) is missing") {
-		t.Fatalf("expected missing --api flag error, got: %v", err)
+		t.Fatalf("error = %v, want missing --api validation", err)
 	}
-}
-
-func TestGenerateCmd_InvalidConcurrency(t *testing.T) {
-	for _, value := range []string{"0", "-1"} {
-		t.Run(value, func(t *testing.T) {
-			cleanEnv(t)
-			f := cmdutil.NewFactory()
-			cmd := NewCommand(f)
-
-			var out bytes.Buffer
-			cmd.SetOut(&out)
-			cmd.SetErr(&out)
-			cmd.SetArgs([]string{"-a", "spec.yaml", "--concurrency=" + value})
-
-			err := cmd.Execute()
-			if err == nil || !strings.Contains(err.Error(), "--concurrency must be at least 1") {
-				t.Fatalf("error = %v, want --concurrency validation", err)
-			}
-		})
-	}
-}
-
-func TestGenerateCmd_UnconfiguredLLM(t *testing.T) {
-	cleanEnv(t)
-	tmpDir := t.TempDir()
-	specPath := filepath.Join(tmpDir, "spec.yaml")
-	_ = os.WriteFile(specPath, []byte(testOpenAPISpec), 0600)
-
-	f := cmdutil.NewFactory()
-	cmd := NewCommand(f)
-
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"-a", specPath})
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error when LLM service is unconfigured, got nil")
-	}
-}
-
-func TestGenerateCmd_EndToEnd_Success(t *testing.T) {
-	cleanEnv(t)
-	tmpDir := t.TempDir()
-	specPath := filepath.Join(tmpDir, "openapi.yaml")
-	if err := os.WriteFile(specPath, []byte(testOpenAPISpec), 0600); err != nil {
-		t.Fatalf("write spec failed: %v", err)
-	}
-	prdPath := filepath.Join(tmpDir, "prd.md")
-	if err := os.WriteFile(prdPath, []byte(testPRD), 0600); err != nil {
-		t.Fatalf("write prd failed: %v", err)
-	}
-	outDir := filepath.Join(tmpDir, "test_out")
-
-	// Start a mock OpenAI-compatible HTTP server
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{
-				{
-					"message": map[string]interface{}{
-						"content": `{
-							"id": "SCN_USERS",
-							"name": "Users Workflow",
-							"steps": [
-								{
-									"id": "STEP_LIST",
-									"name": "List Users",
-									"request": {
-										"method": "GET",
-										"endpoint": "/users"
-									},
-									"test_cases": [
-										{
-											"id": "TC_OK",
-											"name": "Get 200 OK",
-											"type": "positive",
-											"assert": {
-												"status": 200
-											}
-										}
-									]
-								}
-							]
-						}`,
-					},
-				},
-			},
-		})
-	}))
-	defer mockServer.Close()
-
-	// Configure environment to point to mock LLM server
-	t.Setenv("SPECTEST_PROVIDER", "openai")
-	t.Setenv("SPECTEST_ENDPOINT", mockServer.URL)
-	t.Setenv("SPECTEST_MODEL", "gpt-4o")
-	t.Setenv("OPENAI_API_KEY", "sk-mock-test-key")
-
-	f := cmdutil.NewFactory()
-	cmd := NewCommand(f)
-
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
-		"-a", specPath,
-		"-r", prdPath,
-		"-o", outDir,
-		"-e", "postman",
-		"--enrich",
-		"-c", "2",
-	})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("generate execution failed: %v", err)
-	}
-
-	got := out.String()
-	expectedSummaries := []string{
-		"LLM Provider        : openai",
-		"Spec Pruning        :",
-		"Auth Detection      : Detected producer [POST /auth/login] -> wired Bearer token",
-		"Domain Chunks       :",
-		"Concurrency         : 2",
-		"Test Suite File     :",
-		"Coverage Matrix     :",
-		"Exported Collection :",
-	}
-
-	for _, s := range expectedSummaries {
-		if !strings.Contains(got, s) {
-			t.Errorf("expected generate output to contain %q, got:\n%s", s, got)
-		}
-	}
-
-	// Verify generated artifacts on disk
-	suiteFile := filepath.Join(outDir, "spectest.yaml")
-	matrixFile := filepath.Join(outDir, "test_matrix.md")
-	postmanFile := filepath.Join(outDir, "postman_collection.json")
-
-	for _, file := range []string{suiteFile, matrixFile, postmanFile} {
-		if _, err := os.Stat(file); err != nil {
-			t.Errorf("expected file %s to be created: %v", file, err)
-		}
+	if !strings.Contains(out.String(), "Usage:") {
+		t.Errorf("missing --api must still print usage, got:\n%s", out.String())
 	}
 }

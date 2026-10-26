@@ -1,104 +1,149 @@
-// Package generate implements the `spectest generate` CLI subcommand, which turns an
-// OpenAPI specification and optional Markdown PRD into a `spectest.yaml` test suite.
+// Package generate implements the `spectest generate` CLI subcommand, which
+// creates or updates the spectest suite and history log from one or more
+// OpenAPI documents and optional raw requirements.
 package generate
 
 import (
-	"context"
 	"fmt"
-	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nguyentin05/spectest/internal/adapter/cli/cmdutil"
-	ucgenerate "github.com/nguyentin05/spectest/internal/usecase/generate"
+	"github.com/nguyentin05/spectest/internal/infrastructure/sources"
+	"github.com/nguyentin05/spectest/internal/infrastructure/suitefile"
+	usecasegenerate "github.com/nguyentin05/spectest/internal/usecase/generate"
 	"github.com/spf13/cobra"
 )
 
 // options holds the parsed flag values for a single `spectest generate` invocation.
 type options struct {
-	apiPath     string
-	reqPath     string
-	outputDir   string
-	exportFmt   string
-	enrich      bool
-	concurrency int
+	apiValues []string
+	reqPath   string
+	outputDir string
+	mode      string
+	dryRun    bool
 }
 
-// NewCommand creates the `spectest generate` subcommand and binds its flags:
-// `--api/-a` (required OpenAPI path), `--req/-r` (optional PRD path), `--output/-o`
-// (output directory, default ./tests), `--export/-e` (extra format such as postman),
-// `--enrich`, and `--concurrency/-c` (parallel LLM requests, default 1).
+// NewCommand creates the `spectest generate` subcommand. It supports `--mode init`
+// to generate a new suite and `--mode update` to incrementally synchronize an existing
+// suite with OpenAPI changes.
 func NewCommand(f *cmdutil.Factory) *cobra.Command {
-	opts := &options{
-		outputDir: "./tests",
-	}
+	opts := &options{outputDir: "./tests", mode: "init"}
 
 	cmd := &cobra.Command{
 		Use:     "generate",
-		Short:   "Generate test scenarios and hybrid datasets from OpenAPI and PRD specifications",
+		Short:   "Generate a new SpecTest suite from OpenAPI and requirements",
 		GroupID: "core",
-		Long: `Analyze OpenAPI specs and Markdown PRD requirements to generate automated test suites,
-synthesize hybrid test datasets, and produce structured spectest.yaml and test_matrix.md.`,
-		Example: `  spectest generate -a openapi.yaml -r requirements.md
-  spectest generate -a openapi.yaml -o ./tests --export postman`,
+		Args:    cobra.NoArgs,
+		Long: `Generate or update a spectest.yaml suite from one or more OpenAPI documents and optional
+raw requirements. The command manages spectest.yaml and spectest.log.yaml together.
+
+In init mode, if existing suite files are found, confirmation is required before overwriting.
+In update mode, OpenAPI changes are diffed against the history log catalog and applied incrementally.`,
+		Example: `  spectest generate --mode init --api auth=openapi-auth.yaml --api order=openapi-order.yaml
+  spectest generate --mode init -a auth=openapi.yaml -r requirements.md -o ./tests --dry-run
+  spectest generate --mode update -a auth=openapi.yaml -o ./tests`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGenerate(cmd.Context(), cmd.OutOrStdout(), f, opts)
+			return runGenerate(cmd, opts, f)
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.apiPath, "api", "a", "", "Path to OpenAPI/Swagger specification (yaml/json) [required]")
-	cmd.Flags().StringVarP(&opts.reqPath, "req", "r", "", "Path to business requirements / PRD (markdown)")
-	cmd.Flags().StringVarP(&opts.outputDir, "output", "o", opts.outputDir, "Output directory for generated test suites")
-	cmd.Flags().StringVarP(&opts.exportFmt, "export", "e", "", "Export additional formats (e.g. 'postman')")
-	cmd.Flags().BoolVar(&opts.enrich, "enrich", false, "Use AI to enrich missing descriptions in OpenAPI before generating")
-	cmd.Flags().IntVarP(&opts.concurrency, "concurrency", "c", 1,
-		"Number of concurrent LLM requests (1 = sequential; try 4+ for cloud providers)")
+	cmd.Flags().StringArrayVarP(&opts.apiValues, "api", "a", nil,
+		"OpenAPI document as <server>=<path> (repeatable; order defines servers)")
+	cmd.Flags().StringVarP(&opts.reqPath, "req", "r", "",
+		"Path to raw business requirements (markdown)")
+	cmd.Flags().StringVarP(&opts.outputDir, "output", "o", opts.outputDir,
+		"Directory containing spectest.yaml and spectest.log.yaml")
+	cmd.Flags().StringVar(&opts.mode, "mode", opts.mode,
+		"Generation mode: init or update")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false,
+		"Run the full pipeline but write no files")
 
 	return cmd
 }
 
-// runGenerate validates flags, resolves the configured LLM service, executes the
-// generation usecase, and prints a plain-text summary of the produced artifacts to out.
-func runGenerate(ctx context.Context, out io.Writer, f *cmdutil.Factory, opts *options) error {
-	if strings.TrimSpace(opts.apiPath) == "" {
+func validateMode(mode string) error {
+	switch mode {
+	case "init", "update":
+		return nil
+	default:
+		return fmt.Errorf("invalid --mode %q: must be init or update", mode)
+	}
+}
+
+func runGenerate(cmd *cobra.Command, opts *options, f *cmdutil.Factory) error {
+	if err := cmd.Context().Err(); err != nil {
+		return err
+	}
+	if err := validateMode(opts.mode); err != nil {
+		return err
+	}
+	if len(opts.apiValues) == 0 {
 		return fmt.Errorf("required flag --api (-a) is missing")
 	}
-	if opts.concurrency < 1 {
-		return fmt.Errorf("--concurrency must be at least 1")
+	inputs, err := parseAPIFlags(opts.apiValues)
+	if err != nil {
+		return err
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if strings.TrimSpace(opts.outputDir) == "" {
+		return fmt.Errorf("--output must not be empty")
+	}
+
+	cmd.SilenceUsage = true
+
+	reqMode := usecasegenerate.ModeInitial
+	if opts.mode == "update" {
+		reqMode = usecasegenerate.ModeUpdate
+	}
+
+	if reqMode == usecasegenerate.ModeInitial {
+		if err := guardOverwrite(
+			cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), opts.outputDir, opts.dryRun,
+		); err != nil {
+			return err
+		}
+	} else {
+		// Update mode requires spectest.yaml and spectest.log.yaml to already exist
+		suitePath := filepath.Join(opts.outputDir, suitefile.SuiteFileName)
+		logPath := filepath.Join(opts.outputDir, suitefile.LogFileName)
+		if _, err := os.Stat(suitePath); err != nil {
+			return fmt.Errorf("update requires %s in %s: %w", suitefile.SuiteFileName, opts.outputDir, err)
+		}
+		if _, err := os.Stat(logPath); err != nil {
+			return fmt.Errorf("update requires %s in %s: %w", suitefile.LogFileName, opts.outputDir, err)
+		}
 	}
 
 	llmSvc, err := f.LLMService()
 	if err != nil {
-		return err
+		if reqMode == usecasegenerate.ModeUpdate {
+			// Update mode resolves LLM optionally (errors only if plan requires LLM)
+			llmSvc = nil
+		} else {
+			return err
+		}
 	}
 
-	gen := ucgenerate.NewGenerator(llmSvc, f.SuiteRepository())
-	res, err := gen.Execute(ctx, ucgenerate.Request{
-		APIPath:     opts.apiPath,
-		ReqPath:     opts.reqPath,
-		OutputDir:   opts.outputDir,
-		ExportFmt:   opts.exportFmt,
-		Enrich:      opts.enrich,
-		Concurrency: opts.concurrency,
+	loader := sources.NewLoader()
+	gen := usecasegenerate.NewGenerator(llmSvc, loader, f.SuiteStore(), realClock{})
+
+	res, err := gen.Execute(cmd.Context(), usecasegenerate.Request{
+		Mode:             reqMode,
+		APIs:             inputs,
+		RequirementsPath: opts.reqPath,
+		OutputDir:        opts.outputDir,
+		DryRun:           opts.dryRun,
+		Concurrency:      1,
 	})
 	if err != nil {
 		return err
 	}
-
-	fmt.Fprintf(out, "LLM Provider        : %s\n", llmSvc.Name())
-	fmt.Fprintf(out, "Spec Pruning        : %.1f%% reduction\n", res.CompressionRatio)
-	if res.AuthProducer != "" {
-		fmt.Fprintf(out, "Auth Detection      : Detected producer [%s] -> wired Bearer token\n", res.AuthProducer)
-	}
-	fmt.Fprintf(out, "Domain Chunks       : %d processed\n", res.ChunksProcessed)
-	fmt.Fprintf(out, "Concurrency         : %d\n", opts.concurrency)
-	fmt.Fprintf(out, "Test Suite File     : %s\n", res.SuitePath)
-	fmt.Fprintf(out, "Coverage Matrix     : %s\n", res.MatrixPath)
-	if res.ExportPath != "" {
-		fmt.Fprintf(out, "Exported Collection : %s\n", res.ExportPath)
-	}
-
+	printSummary(cmd.OutOrStdout(), res)
 	return nil
 }
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }

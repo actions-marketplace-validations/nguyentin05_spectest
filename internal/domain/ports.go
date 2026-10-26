@@ -1,28 +1,20 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // LLMService defines the outbound port for interacting with Large Language Model providers.
 // Implementations communicate over the standard Chat Completions protocol to synthesize
-// structured test scenarios from pruned specifications and business requirements.
+// structured test scenarios from normalized APIs and raw requirements.
 type LLMService interface {
 	// Name returns a human-readable identifier for the active provider, model, and endpoint.
 	Name() string
 
 	// GenerateStructured sends a system instruction and user prompt to the configured model
 	// and returns the raw JSON payload extracted from the completion response.
-	GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, responseSchema interface{}) (string, error)
-}
-
-// SuiteRepository defines the persistence port for loading and saving `spectest.yaml`
-// test suite artifacts on the local filesystem.
-type SuiteRepository interface {
-	// Load reads and deserializes a `spectest.yaml` file from the given filesystem path.
-	Load(path string) (*TestSuiteFile, error)
-
-	// Save serializes and writes a TestSuiteFile to disk at the given path, creating parent
-	// directories automatically if they do not exist.
-	Save(path string, suite *TestSuiteFile) error
+	GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, responseSchema any) (string, error)
 }
 
 // CredentialStore defines the configuration port for resolving and persisting LLM provider
@@ -39,4 +31,42 @@ type CredentialStore interface {
 
 	// SetEndpoint persists the base API endpoint URL for the specified provider.
 	SetEndpoint(provider, endpoint string) error
+}
+
+// FileSet groups the three state files managed by the generate pipeline.
+// A nil member means that file does not exist.
+type FileSet struct {
+	Suite *Suite
+	Log   *LogFile
+	Track *TrackFile
+}
+
+// WriteOptions selects which files to persist and carries the run mode for
+// diagnostics or the pending marker.
+type WriteOptions struct {
+	Suite bool
+	Log   bool
+	Track bool
+	Mode  string
+}
+
+// SourceLoader loads, normalizes, and fingerprints OpenAPI and requirements inputs.
+type SourceLoader interface {
+	Load(ctx context.Context, inputs []APIInput, requirementsPath string) (*SourceSet, error)
+}
+
+// SuiteStore loads and saves the three state files in an output directory.
+type SuiteStore interface {
+	Load(ctx context.Context, dir string) (*FileSet, error)
+	Save(ctx context.Context, dir string, files *FileSet, opts WriteOptions) error
+}
+
+// Clock supplies the current time so history entries are deterministic in tests.
+type Clock interface {
+	Now() time.Time
+}
+
+// ServerLifecycleManager controls startup, readiness verification, and teardown of test server environments.
+type ServerLifecycleManager interface {
+	Up(ctx context.Context) (teardown func(), err error)
 }

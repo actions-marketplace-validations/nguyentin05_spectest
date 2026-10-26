@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpecTest UI - AI-Native Test Engineering Dashboard</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f293d;
+      --card-hover: #162032;
+      --text: #f3f4f6;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --info: #0ea5e9;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Top Navbar */
+    header {
+      background: #0f172a;
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      font-weight: 800;
+      font-size: 0.9rem;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+    .logo-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .top-status {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      font-size: 0.85rem;
+    }
+    .pill {
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      padding: 0.3rem 0.75rem;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #64748b;
+    }
+    .dot.online { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .dot.offline { background: var(--danger); }
+    .dot.running { background: var(--warning); animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+
+    /* App Container */
+    .app-layout {
+      display: flex;
+      flex: 1;
+    }
+
+    /* Sidebar Navigation */
+    aside {
+      width: 240px;
+      background: #0d1322;
+      border-right: 1px solid var(--card-border);
+      padding: 1.25rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      border-radius: 8px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      text-align: left;
+      transition: all 0.15s ease;
+      width: 100%;
+    }
+    .nav-btn:hover {
+      background: #1e293b;
+      color: #fff;
+    }
+    .nav-btn.active {
+      background: #1e1b4b;
+      color: #a5b4fc;
+      border-left: 3px solid var(--primary);
+    }
+
+    /* Content Area */
+    main {
+      flex: 1;
+      padding: 1.75rem 2rem;
+      max-width: 1300px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Card styling */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    /* Form inputs */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    input[type="text"], input[type="password"], input[type="number"], select, textarea {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      background: #0d1322;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 0.6rem 1.2rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.15s;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+    }
+    .btn-outline:hover {
+      background: #1e293b;
+      color: #fff;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 0.75rem;
+    }
+    th {
+      text-align: left;
+      padding: 0.65rem 0.85rem;
+      background: #0f172a;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--card-border);
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+    td {
+      padding: 0.75rem 0.85rem;
+      border-bottom: 1px solid #1a2436;
+      vertical-align: middle;
+    }
+    tr:hover { background: var(--card-hover); }
+
+    /* HTTP method badges */
+    .method-badge {
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      display: inline-block;
+    }
+    .method-get { background: #064e3b; color: #6ee7b7; }
+    .method-post { background: #1e3a8a; color: #93c5fd; }
+    .method-put { background: #78350f; color: #fcd34d; }
+    .method-delete { background: #7f1d1d; color: #fca5a5; }
+
+    /* Status badge */
+    .status-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .status-pass { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .status-fail { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .status-skip { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+    .status-run { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+    /* Progress bar */
+    .progress-track {
+      background: #1e293b;
+      height: 8px;
+      border-radius: 9999px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+    .progress-fill {
+      background: linear-gradient(90deg, #6366f1, #10b981);
+      height: 100%;
+      width: 0%;
+      transition: width 0.2s ease;
+    }
+
+    /* Console logs */
+    .console-box {
+      background: #070b13;
+      border: 1px solid #1a2438;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 1rem;
+      max-height: 280px;
+      overflow-y: auto;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
+    /* Markdown container */
+    .markdown-view {
+      background: #0d1322;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      line-height: 1.7;
+    }
+    .markdown-view h1, .markdown-view h2, .markdown-view h3 {
+      color: #fff;
+      margin-top: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+    .markdown-view h1 { font-size: 1.5rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.4rem; }
+    .markdown-view h2 { font-size: 1.25rem; }
+    .markdown-view ul { margin-left: 1.5rem; margin-bottom: 1rem; }
+    .markdown-view code {
+      background: #1e293b;
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      color: #e2e8f0;
+    }
+
+    /* File drop area */
+    .drop-zone {
+      border: 2px dashed var(--card-border);
+      border-radius: 8px;
+      padding: 2rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      background: #0c111e;
+      transition: border-color 0.2s;
+    }
+    .drop-zone:hover { border-color: var(--primary); }
+
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      padding: 0.85rem 1.25rem;
+      border-radius: 8px;
+      background: #1e293b;
+      border-left: 4px solid var(--primary);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      z-index: 100;
+      font-size: 0.9rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-container">
+      <div class="logo-badge">SpecTest</div>
+      <div class="logo-title">Control Center</div>
+    </div>
+    <div class="top-status">
+      <div class="pill">
+        <span>Target:</span>
+        <div id="target-dot" class="dot"></div>
+        <span id="target-label">Unchecked</span>
+      </div>
+      <div class="pill">
+        <span>LLM:</span>
+        <span id="top-llm" style="color:#a5b4fc; font-weight:600;">Loading...</span>
+      </div>
+      <button class="btn btn-outline" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="checkTargetHealth()">
+        ⚡ Quick Ping
+      </button>
+    </div>
+  </header>
+
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside>
+      <button class="nav-btn active" onclick="switchTab('dashboard')">
+        🧭 <span>Dashboard</span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('config')">
+        ⚙️ <span>Configuration</span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('server')">
+        🌐 <span>Target Server</span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('specs')">
+        📑 <span>Specs & Test Plan</span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('runner')">
+        🚀 <span>Test Runner</span>
+      </button>
+      <button class="nav-btn" onclick="switchTab('reports')">
+        📊 <span>Reports & Matrix</span>
+      </button>
+    </aside>
+
+    <!-- Main Content -->
+    <main>
+
+      <!-- 1. DASHBOARD TAB -->
+      <section id="tab-dashboard" class="tab-content active">
+        <h2 style="font-size:1.4rem; font-weight:700; margin-bottom:1.25rem;">SpecTest Overview</h2>
+        
+        <div class="grid-3" style="margin-bottom:1.5rem;">
+          <div class="card" style="margin:0;">
+            <div style="font-size:0.85rem; color:var(--text-muted);">Active Provider</div>
+            <div id="dash-prov" style="font-size:1.35rem; font-weight:700; color:#fff; margin-top:0.35rem;">-</div>
+            <div id="dash-model" style="font-size:0.8rem; color:var(--primary); margin-top:0.25rem;">-</div>
+          </div>
+          <div class="card" style="margin:0;">
+            <div style="font-size:0.85rem; color:var(--text-muted);">Target Server Status</div>
+            <div id="dash-target-status" style="font-size:1.35rem; font-weight:700; color:var(--text-muted); margin-top:0.35rem;">Unknown</div>
+            <div id="dash-target-url" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem; font-family:var(--font-mono);">-</div>
+          </div>
+          <div class="card" style="margin:0;">
+            <div style="font-size:0.85rem; color:var(--text-muted);">Latest Test Run</div>
+            <div id="dash-run-status" style="font-size:1.35rem; font-weight:700; color:var(--text-muted); margin-top:0.35rem;">No runs yet</div>
+            <div id="dash-run-stats" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">Ready to execute</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>Recent Activity Logs</span>
+            <button class="btn btn-outline" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="loadLogs()">Refresh</button>
+          </div>
+          <div id="dash-logs" class="console-box" style="height:220px;">Loading logs...</div>
+        </div>
+      </section>
+
+      <!-- 2. CONFIG TAB -->
+      <section id="tab-config" class="tab-content">
+        <div class="card">
+          <div class="card-title">
+            <span>LLM Provider & Credentials</span>
+            <span style="font-size:0.8rem; color:var(--text-muted); font-weight:normal;" id="cfg-file-path">~/.spectest/credentials.yaml</span>
+          </div>
+          
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Provider</label>
+              <select id="cfg-prov">
+                <option value="openai">OpenAI (Cloud)</option>
+                <option value="gemini">Google Gemini (Cloud)</option>
+                <option value="anthropic">Anthropic Claude (Cloud)</option>
+                <option value="local">Local Server (No Key required)</option>
+                <option value="custom">Custom Provider</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Model Name</label>
+              <input type="text" id="cfg-model" placeholder="gpt-4o-mini, gemini-1.5-flash, qwen2.5-coder">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Endpoint URL (Required for Local / Custom)</label>
+            <input type="text" id="cfg-endpoint" placeholder="https://api.openai.com/v1 or http://localhost:11434/v1">
+          </div>
+
+          <div class="form-group">
+            <label>API Key (Required for Cloud, Optional for Local)</label>
+            <input type="password" id="cfg-key" placeholder="Enter Cloud API Key (leave empty for Local Server)">
+            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.25rem;">
+              Current Key: <code id="cfg-key-masked">None</code> (stored with permissions 0600)
+            </div>
+          </div>
+
+          <div style="display:flex; gap:0.75rem; margin-top:1.25rem;">
+            <button class="btn btn-primary" onclick="saveConfig()">💾 Save Configuration</button>
+            <button class="btn btn-outline" onclick="testLLMConnection()">🧪 Test Connection</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. TARGET SERVER TAB -->
+      <section id="tab-server" class="tab-content">
+        <div class="card">
+          <div class="card-title">Target Server Probing & Healthcheck</div>
+          
+          <div class="form-group">
+            <label>Target Base URL</label>
+            <input type="text" id="srv-url" value="http://localhost:8080" placeholder="http://localhost:8080">
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Server Mode</label>
+              <select id="srv-mode" onchange="toggleComposeFields()">
+                <option value="existing">Existing Server (Already Running)</option>
+                <option value="compose">Docker Compose (Managed Lifecycle)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Timeout (Seconds)</label>
+              <input type="number" id="srv-timeout" value="5" min="1" max="60">
+            </div>
+          </div>
+
+          <div id="compose-fields" style="display:none;" class="grid-2">
+            <div class="form-group">
+              <label>Compose File</label>
+              <input type="text" id="srv-compose-file" value="docker-compose.yml" placeholder="docker-compose.yml">
+            </div>
+            <div class="form-group">
+              <label>Service Name (Optional)</label>
+              <input type="text" id="srv-service-name" placeholder="api, backend">
+            </div>
+          </div>
+
+          <button class="btn btn-success" onclick="checkTargetHealth(true)">🔍 Check Server Ready</button>
+
+          <div id="srv-result-card" style="margin-top:1.5rem; display:none;" class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span id="srv-res-title" style="font-weight:700;">Status</span>
+              <span id="srv-res-latency" class="pill" style="font-family:var(--font-mono);">-</span>
+            </div>
+            <div id="srv-res-msg" style="margin-top:0.5rem; font-size:0.9rem; color:var(--text-muted);">-</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. SPECS & PLAN TAB -->
+      <section id="tab-specs" class="tab-content">
+        <div class="grid-2">
+          <!-- Upload Box -->
+          <div class="card">
+            <div class="card-title">Upload Spec / Requirements</div>
+            <div class="drop-zone" onclick="document.getElementById('file-upload').click()">
+              <input type="file" id="file-upload" style="display:none;" onchange="uploadFile(this)">
+              <div style="font-size:2rem; margin-bottom:0.5rem;">📁</div>
+              <div style="font-weight:600;">Click or Drop file to upload</div>
+              <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem;">
+                OpenAPI (yaml/json), PRD (md), or spectest.yaml
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Generate Suite -->
+          <div class="card">
+            <div class="card-title">Generate Test Suite</div>
+            <div class="form-group">
+              <label>OpenAPI Spec File</label>
+              <input type="text" id="gen-spec" placeholder="openapi.yaml">
+            </div>
+            <div class="form-group">
+              <label>PRD Markdown File</label>
+              <input type="text" id="gen-prd" placeholder="prd.md">
+            </div>
+            <div style="display:flex; gap:1rem; align-items:center;">
+              <div class="form-group" style="flex:1;">
+                <label>Concurrency (1-10)</label>
+                <input type="number" id="gen-concurrency" value="2" min="1" max="10">
+              </div>
+              <button class="btn btn-primary" style="margin-top:0.75rem;" onclick="generateSuite()">⚡ Generate</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Plan Viewer -->
+        <div class="card">
+          <div class="card-title">
+            <span>Test Plan Structure (`spectest.yaml`)</span>
+            <div style="display:flex; gap:0.5rem;">
+              <input type="text" id="plan-path" placeholder="spectest.yaml" style="width:180px; padding:0.35rem 0.5rem; font-size:0.8rem;">
+              <button class="btn btn-outline" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="loadPlan()">Load Plan</button>
+            </div>
+          </div>
+          <div id="plan-summary" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem;">Loading plan...</div>
+          <div style="overflow-x:auto;">
+            <table id="plan-table">
+              <thead>
+                <tr>
+                  <th>Scenario</th>
+                  <th>Step</th>
+                  <th>Method & Endpoint</th>
+                  <th>Cases</th>
+                  <th>Assertion Target</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No plan loaded</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. TEST RUNNER TAB -->
+      <section id="tab-runner" class="tab-content">
+        <div class="card">
+          <div class="card-title">
+            <span>Live Test Execution</span>
+            <div style="display:flex; gap:0.5rem;">
+              <button id="btn-run" class="btn btn-success" onclick="startRun()">▶ Run Suite</button>
+              <button id="btn-cancel" class="btn btn-danger" onclick="cancelRun()" disabled>⏹ Cancel Run</button>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Target URL</label>
+              <input type="text" id="run-target-url" value="http://localhost:8080">
+            </div>
+            <div class="form-group">
+              <label>Suite File</label>
+              <input type="text" id="run-suite-path" value="spectest.yaml">
+            </div>
+          </div>
+
+          <!-- Progress -->
+          <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:600;">
+            <span id="run-progress-text">Progress: 0%</span>
+            <span id="run-counts">Passed: 0 | Failed: 0 | Total: 0</span>
+          </div>
+          <div class="progress-track">
+            <div id="run-progress-bar" class="progress-fill"></div>
+          </div>
+
+          <!-- Live Case Stream Table -->
+          <div style="overflow-x:auto; margin-top:1rem;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Case ID</th>
+                  <th>Method & Endpoint</th>
+                  <th>Expected</th>
+                  <th>Actual</th>
+                  <th>Latency</th>
+                  <th>Error Diff</th>
+                </tr>
+              </thead>
+              <tbody id="runner-cases-body">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Press 'Run Suite' to begin execution</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. REPORTS TAB -->
+      <section id="tab-reports" class="tab-content">
+        <div class="card">
+          <div class="card-title">
+            <span>Markdown Report & Matrix Inspector</span>
+            <div style="display:flex; gap:0.5rem;">
+              <input type="text" id="md-path" value="test_matrix.md" placeholder="test_matrix.md" style="width:200px; padding:0.35rem 0.5rem; font-size:0.8rem;">
+              <button class="btn btn-outline" style="padding:0.35rem 0.75rem; font-size:0.8rem;" onclick="loadMarkdown()">Load Document</button>
+            </div>
+          </div>
+          <div id="markdown-container" class="markdown-view">
+            Click 'Load Document' to render markdown coverage matrix or GitHub Actions test summary.
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast" class="toast">Notice message</div>
+
+  <script>
+    // State management
+    let activeSSE = null;
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+      
+      const target = document.getElementById('tab-' + tabId);
+      if (target) target.classList.add('active');
+
+      const btn = Array.from(document.querySelectorAll('.nav-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+      if (btn) btn.classList.add('active');
+
+      if (tabId === 'dashboard') loadLogs();
+      if (tabId === 'config') loadConfig();
+      if (tabId === 'specs') { loadWorkspace(); loadPlan(); }
+      if (tabId === 'reports') loadMarkdown();
+    }
+
+    function showToast(msg, duration = 3000) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, duration);
+    }
+
+    // Config APIs
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        document.getElementById('top-llm').textContent = (data.default_provider || 'openai') + ' (' + (data.active_model || 'default') + ')';
+        document.getElementById('dash-prov').textContent = (data.default_provider || 'OpenAI').toUpperCase();
+        document.getElementById('dash-model').textContent = data.active_model || 'gpt-4o-mini';
+        
+        document.getElementById('cfg-prov').value = data.default_provider || 'openai';
+        document.getElementById('cfg-model').value = data.active_model || '';
+        document.getElementById('cfg-endpoint').value = data.endpoint_url || '';
+        document.getElementById('cfg-key-masked').textContent = data.api_key_masked || 'None';
+        document.getElementById('cfg-file-path').textContent = data.config_file || '~/.spectest/credentials.yaml';
+      } catch (err) {
+        console.error("loadConfig error:", err);
+      }
+    }
+
+    async function saveConfig() {
+      const payload = {
+        provider: document.getElementById('cfg-prov').value,
+        model: document.getElementById('cfg-model').value,
+        endpoint: document.getElementById('cfg-endpoint').value,
+        api_key: document.getElementById('cfg-key').value
+      };
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Configuration saved successfully!");
+          document.getElementById('cfg-key').value = '';
+          loadConfig();
+        } else {
+          showToast("Error: " + (data.message || "Failed to save"));
+        }
+      } catch (err) {
+        showToast("Error saving config: " + err.message);
+      }
+    }
+
+    async function testLLMConnection() {
+      showToast("Testing LLM connectivity...");
+      const payload = {
+        provider: document.getElementById('cfg-prov').value,
+        model: document.getElementById('cfg-model').value,
+        endpoint: document.getElementById('cfg-endpoint').value,
+        api_key: document.getElementById('cfg-key').value
+      };
+      try {
+        const res = await fetch('/api/config/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("✅ " + data.message);
+        } else {
+          showToast("❌ " + data.message, 5000);
+        }
+      } catch (err) {
+        showToast("Connection test failed: " + err.message);
+      }
+    }
+
+    // Target Server Healthcheck
+    async function checkTargetHealth(showAlert = false) {
+      const targetURL = document.getElementById('srv-url').value || document.getElementById('run-target-url').value || 'http://localhost:8080';
+      const timeout = parseInt(document.getElementById('srv-timeout').value) || 5;
+      const mode = document.getElementById('srv-mode').value;
+
+      document.getElementById('target-dot').className = 'dot running';
+      document.getElementById('target-label').textContent = 'Probing...';
+
+      try {
+        const res = await fetch('/api/server/healthcheck', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_url: targetURL,
+            timeout_seconds: timeout,
+            mode: mode,
+            compose_file: document.getElementById('srv-compose-file').value,
+            service_name: document.getElementById('srv-service-name').value
+          })
+        });
+        const data = await res.json();
+        const dot = document.getElementById('target-dot');
+        const label = document.getElementById('target-label');
+        const resCard = document.getElementById('srv-result-card');
+        
+        resCard.style.display = 'block';
+
+        if (data.ready) {
+          dot.className = 'dot online';
+          label.textContent = 'Ready (' + data.latency_ms + 'ms)';
+          document.getElementById('dash-target-status').textContent = 'Online';
+          document.getElementById('dash-target-status').style.color = 'var(--success)';
+          document.getElementById('dash-target-url').textContent = targetURL;
+
+          document.getElementById('srv-res-title').textContent = "🟢 Server Ready";
+          document.getElementById('srv-res-latency').textContent = data.latency_ms + " ms";
+          document.getElementById('srv-res-msg').textContent = data.message;
+          if (showAlert) showToast("✅ Server at " + targetURL + " is ready!");
+        } else {
+          dot.className = 'dot offline';
+          label.textContent = 'Offline';
+          document.getElementById('dash-target-status').textContent = 'Offline';
+          document.getElementById('dash-target-status').style.color = 'var(--danger)';
+          document.getElementById('dash-target-url').textContent = targetURL;
+
+          document.getElementById('srv-res-title').textContent = "🔴 Server Unavailable";
+          document.getElementById('srv-res-latency').textContent = data.latency_ms + " ms";
+          document.getElementById('srv-res-msg').textContent = data.error || data.message;
+          if (showAlert) showToast("❌ Server unreachable: " + (data.error || data.message), 5000);
+        }
+      } catch (err) {
+        document.getElementById('target-dot').className = 'dot offline';
+        document.getElementById('target-label').textContent = 'Error';
+      }
+    }
+
+    function toggleComposeFields() {
+      const mode = document.getElementById('srv-mode').value;
+      document.getElementById('compose-fields').style.display = (mode === 'compose') ? 'grid' : 'none';
+    }
+
+    // Specs & Workspace
+    async function loadWorkspace() {
+      try {
+        const res = await fetch('/api/specs/workspace');
+        const data = await res.json();
+        // Auto-fill inputs if found
+        data.items.forEach(it => {
+          if (it.type === 'openapi' && !document.getElementById('gen-spec').value) {
+            document.getElementById('gen-spec').value = it.path;
+          }
+          if (it.type === 'prd' && !document.getElementById('gen-prd').value) {
+            document.getElementById('gen-prd').value = it.path;
+          }
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function uploadFile(input) {
+      if (!input.files || input.files.length === 0) return;
+      const file = input.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      showToast("Uploading " + file.name + "...");
+      try {
+        const res = await fetch('/api/specs/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Uploaded " + data.file_name);
+          if (data.type === 'openapi') document.getElementById('gen-spec').value = data.path;
+          if (data.type === 'prd') document.getElementById('gen-prd').value = data.path;
+          if (data.type === 'suite') {
+            document.getElementById('plan-path').value = data.path;
+            document.getElementById('run-suite-path').value = data.path;
+            loadPlan();
+          }
+        }
+      } catch (err) {
+        showToast("Upload failed: " + err.message);
+      }
+    }
+
+    async function generateSuite() {
+      const spec = document.getElementById('gen-spec').value;
+      const prd = document.getElementById('gen-prd').value;
+      const concurrency = parseInt(document.getElementById('gen-concurrency').value) || 2;
+
+      if (!spec || !prd) {
+        showToast("Please provide both OpenAPI spec and PRD path");
+        return;
+      }
+
+      showToast("Generating test suite with AI (concurrency: " + concurrency + ")...");
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            spec_path: spec,
+            prd_path: prd,
+            concurrency: concurrency
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("✅ Generated: " + data.suite_path);
+          document.getElementById('plan-path').value = data.suite_path;
+          document.getElementById('run-suite-path').value = data.suite_path;
+          loadPlan();
+        } else {
+          showToast("❌ Generate failed: " + (data.message || "Unknown error"), 5000);
+        }
+      } catch (err) {
+        showToast("Generate request failed: " + err.message);
+      }
+    }
+
+    async function loadPlan() {
+      const path = document.getElementById('plan-path').value;
+      try {
+        const res = await fetch('/api/specs/plan?path=' + encodeURIComponent(path));
+        const data = await res.json();
+        if (data.error) {
+          document.getElementById('plan-summary').textContent = data.message;
+          return;
+        }
+
+        document.getElementById('plan-summary').textContent = 
+          "Suite: " + data.metadata.name + " (" + data.total_cases + " total cases) | Target: " + data.metadata.target_base_url;
+
+        const tbody = document.querySelector('#plan-table tbody');
+        tbody.innerHTML = '';
+
+        data.base.scenarios.forEach(sc => {
+          sc.steps.forEach(st => {
+            const m = (st.request.method || 'GET').toUpperCase();
+            const methodClass = 'method-' + m.toLowerCase();
+            const caseCount = (st.test_cases && st.test_cases.length) ? st.test_cases.length : 1;
+            
+            let assertDesc = "Status 200";
+            if (st.assert && st.assert.status) assertDesc = "Status " + st.assert.status;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td><strong>${sc.id}</strong><br><span style="font-size:0.75rem; color:var(--text-muted);">${sc.name}</span></td>
+              <td><code>${st.id}</code></td>
+              <td><span class="method-badge ${methodClass}">${m}</span> <code>${st.request.endpoint}</code></td>
+              <td>${caseCount} variations</td>
+              <td><span style="font-size:0.8rem; color:#93c5fd;">${assertDesc}</span></td>
+            `;
+            tbody.appendChild(tr);
+          });
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Runner & SSE
+    async function startRun() {
+      const targetURL = document.getElementById('run-target-url').value;
+      const suitePath = document.getElementById('run-suite-path').value;
+
+      document.getElementById('btn-run').disabled = true;
+      document.getElementById('btn-cancel').disabled = false;
+      document.getElementById('runner-cases-body').innerHTML = '';
+
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_url: targetURL, suite_path: suitePath })
+        });
+        const data = await res.json();
+        if (data.error) {
+          showToast("Failed to start run: " + data.message);
+          document.getElementById('btn-run').disabled = false;
+          document.getElementById('btn-cancel').disabled = true;
+          return;
+        }
+
+        showToast("Test execution started (ID: " + data.run_id + ")");
+        listenSSE();
+      } catch (err) {
+        showToast("Error starting run: " + err.message);
+        document.getElementById('btn-run').disabled = false;
+        document.getElementById('btn-cancel').disabled = true;
+      }
+    }
+
+    async function cancelRun() {
+      try {
+        const res = await fetch('/api/run/cancel', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message);
+        document.getElementById('btn-run').disabled = false;
+        document.getElementById('btn-cancel').disabled = true;
+      } catch (err) {
+        showToast("Failed to cancel: " + err.message);
+      }
+    }
+
+    function listenSSE() {
+      if (activeSSE) activeSSE.close();
+      const sse = new EventSource('/api/run/stream');
+      activeSSE = sse;
+
+      let total = 0;
+      let passed = 0;
+      let failed = 0;
+
+      sse.onmessage = (e) => {
+        const evt = JSON.parse(e.data);
+        const tbody = document.getElementById('runner-cases-body');
+
+        if (evt.type === 'init' || evt.type === 'start') {
+          total = evt.total_cases || (evt.data && evt.data.total_cases) || total;
+          updateProgress(passed, failed, total);
+        } else if (evt.type === 'case_result' && evt.data && evt.data.result) {
+          const r = evt.data.result;
+          if (r.status === 'PASS') passed++;
+          else if (r.status === 'FAIL') failed++;
+          updateProgress(passed, failed, total);
+
+          const statusClass = r.status === 'PASS' ? 'status-pass' : (r.status === 'FAIL' ? 'status-fail' : 'status-skip');
+          const m = (r.method || 'GET').toUpperCase();
+
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><span class="status-badge ${statusClass}">${r.status}</span></td>
+            <td><code>${r.case_id}</code></td>
+            <td><span class="method-badge method-${m.toLowerCase()}">${m}</span> <code>${r.endpoint}</code></td>
+            <td><code>${r.expected_http_status || 200}</code></td>
+            <td><code>${r.http_status || '-'}</code></td>
+            <td>${r.latency_ms} ms</td>
+            <td style="color:${r.status==='FAIL'?'#f87171':'var(--text-muted)'}; font-size:0.8rem;">${r.error || '-'}</td>
+          `;
+          tbody.prepend(tr);
+        } else if (evt.type === 'complete' || evt.type === 'cancelled' || evt.type === 'error') {
+          document.getElementById('btn-run').disabled = false;
+          document.getElementById('btn-cancel').disabled = true;
+          sse.close();
+          activeSSE = null;
+
+          document.getElementById('dash-run-status').textContent = evt.type === 'complete' ? (failed > 0 ? 'Failed' : 'Passed') : 'Cancelled';
+          document.getElementById('dash-run-status').style.color = failed > 0 ? 'var(--danger)' : 'var(--success)';
+          document.getElementById('dash-run-stats').textContent = `${passed} passed, ${failed} failed (${total} total)`;
+
+          showToast("Execution finished: " + (evt.message || evt.type));
+        }
+      };
+
+      sse.onerror = () => {
+        sse.close();
+        document.getElementById('btn-run').disabled = false;
+        document.getElementById('btn-cancel').disabled = true;
+      };
+    }
+
+    function updateProgress(pass, fail, total) {
+      const executed = pass + fail;
+      const pct = total > 0 ? Math.min(100, Math.round((executed / total) * 100)) : 0;
+      document.getElementById('run-progress-bar').style.width = pct + '%';
+      document.getElementById('run-progress-text').textContent = 'Progress: ' + pct + '%';
+      document.getElementById('run-counts').textContent = `Passed: ${pass} | Failed: ${fail} | Total: ${total}`;
+    }
+
+    // Markdown reader
+    async function loadMarkdown() {
+      const path = document.getElementById('md-path').value;
+      try {
+        const res = await fetch('/api/markdown/read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: path })
+        });
+        const data = await res.json();
+        if (data.error) {
+          document.getElementById('markdown-container').textContent = data.message;
+          return;
+        }
+
+        // Render basic markdown into styled HTML
+        let html = data.raw_content
+          .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+          .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+          .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+          .replace(/^\> (.*$)/gim, '<blockquote style="border-left:3px solid var(--primary); padding-left:1rem; color:#a5b4fc; margin:1rem 0;">$1</blockquote>')
+          .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+          .replace(/\`\`\`([\s\S]*?)\`\`\`/gim, '<pre style="background:#070b13; padding:1rem; border-radius:6px; overflow-x:auto;"><code>$1</code></pre>')
+          .replace(/\`(.*?)\`/gim, '<code>$1</code>')
+          .replace(/\n\n/gim, '<br><br>');
+
+        document.getElementById('markdown-container').innerHTML = html;
+      } catch (err) {
+        document.getElementById('markdown-container').textContent = "Failed to load markdown: " + err.message;
+      }
+    }
+
+    // Logs
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        const data = await res.json();
+        const box = document.getElementById('dash-logs');
+        if (data.logs && data.logs.length > 0) {
+          box.textContent = data.logs.join('\n');
+          box.scrollTop = box.scrollHeight;
+        } else {
+          box.textContent = 'No logs recorded yet.';
+        }
+      } catch (err) {}
+    }
+
+    // Initial load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadConfig();
+      checkTargetHealth();
+      loadLogs();
+    });
+  </script>
+</body>
+</html>

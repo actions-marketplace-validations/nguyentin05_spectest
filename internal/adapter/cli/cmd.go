@@ -14,6 +14,8 @@ import (
 	"github.com/nguyentin05/spectest/internal/adapter/cli/cmdutil"
 	"github.com/nguyentin05/spectest/internal/adapter/cli/config"
 	"github.com/nguyentin05/spectest/internal/adapter/cli/generate"
+	"github.com/nguyentin05/spectest/internal/adapter/cli/run"
+	"github.com/nguyentin05/spectest/internal/adapter/cli/ui"
 	"github.com/nguyentin05/spectest/internal/platform/buildinfo"
 	"github.com/nguyentin05/spectest/internal/platform/logger"
 	"github.com/spf13/cobra"
@@ -32,8 +34,10 @@ func NewSpectestCmd() *cobra.Command {
 		Short:         "SpecTest: LLM-based API Testing Engine",
 		SilenceErrors: true,
 		Long: `SpecTest is an open-source, cost-efficient LLM test engineering engine that
-converts software requirements (OpenAPI & PRD Markdown) into executable test suites,
-runs multi-tier API assertions, and evolves tests when specifications change.`,
+generates an initial API test suite from OpenAPI documents and optional raw
+requirements, and manages the resulting suite, log, and track files along with
+their configuration. Incremental test updates are reserved for a future release
+and are not implemented yet.`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if f.Verbose {
 				slog.SetDefault(logger.New("debug"))
@@ -41,7 +45,7 @@ runs multi-tier API assertions, and evolves tests when specifications change.`,
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVersion {
-				fmt.Fprintf(cmd.OutOrStdout(), "spectest %s\n", buildinfo.App())
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "spectest %s\n", buildinfo.App())
 				return
 			}
 			_ = cmd.Help()
@@ -61,7 +65,9 @@ runs multi-tier API assertions, and evolves tests when specifications change.`,
 	})
 
 	spectestCmd.AddCommand(generate.NewCommand(f))
+	spectestCmd.AddCommand(run.NewCommand(f))
 	spectestCmd.AddCommand(config.NewCommand(f))
+	spectestCmd.AddCommand(ui.NewCommand(f))
 
 	return spectestCmd
 }
@@ -79,10 +85,10 @@ func Execute() {
 	case 0:
 		return
 	case 130:
-		fmt.Fprintln(os.Stderr, "Canceled.")
+		_, _ = fmt.Fprintln(os.Stderr, "Canceled.")
 		os.Exit(130)
 	default:
-		fmt.Fprintln(os.Stderr, "Error:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }

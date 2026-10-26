@@ -10,12 +10,14 @@
 *.out
 coverage.html
 *.bak
+.spectest.pending
 
 # Docs build
 /site/
 
 # Local documentation
 *.local.md
+.local/
 docs/superpowers/
 
 # Local environment & credentials
