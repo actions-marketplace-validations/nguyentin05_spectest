@@ -298,7 +298,7 @@ func buildOutlinePrompt(c *outlineCtx, gr apiGroup, hints []string) (string, str
 		Common      []promptSetupOutline   `json:"common_setups,omitempty"`
 		Notes       []promptNote           `json:"notes,omitempty"`
 		Assumptions []assumption           `json:"assumptions,omitempty"`
-		Warnings    []string               `json:"warnings,omitempty"`
+		Warnings    []string               `json:"source_warnings,omitempty"`
 		FixRequired []string               `json:"fix_required,omitempty"`
 	}{
 		"outline_group",
