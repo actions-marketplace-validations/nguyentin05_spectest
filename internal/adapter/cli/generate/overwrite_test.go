@@ -32,8 +32,8 @@ func TestConfirmOverwrite(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("confirmOverwrite() = %v, want %v", got, tc.want)
 			}
-			if !strings.Contains(out.String(), "Overwrite") {
-				t.Fatalf("prompt output = %q, want Overwrite", out.String())
+			if !strings.Contains(out.String(), "Overwrite these files? [y/N]") {
+				t.Fatalf("prompt output = %q, want Overwrite these files? [y/N]", out.String())
 			}
 		})
 	}

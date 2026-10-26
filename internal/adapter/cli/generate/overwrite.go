@@ -46,7 +46,7 @@ func confirmOverwrite(in io.Reader, out io.Writer, paths []string) (bool, error)
 			return false, err
 		}
 	}
-	if _, err := fmt.Fprint(out, "Overwrite? [y/N] "); err != nil {
+	if _, err := fmt.Fprint(out, "Overwrite these files? [y/N] "); err != nil {
 		return false, err
 	}
 
