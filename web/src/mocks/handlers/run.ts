@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import type {
+  RunCaseResult,
   RunReport,
-  RunReportRecord,
   RunRequest,
   RunStartResponse,
   RunStreamEvent,
@@ -18,16 +18,12 @@ type ScriptStep = {
   statusCode: number;
   expectedCode: number;
   latencyMs: number;
-  requestPayload: string;
-  responseBody: string;
   savedVars?: Record<string, string>;
 };
 
 type ScriptScenario = {
   id: string;
   name: string;
-  setupsToRun: string[];
-  durationMs: number;
   steps: ScriptStep[];
 };
 
@@ -35,8 +31,6 @@ const SCENARIOS: ScriptScenario[] = [
   {
     id: "order-over-stock",
     name: "Đặt hàng vượt tồn kho",
-    setupsToRun: ["user", "logged_in_user"],
-    durationMs: 115,
     steps: [
       {
         call: "POST {auth}/api/register",
@@ -45,8 +39,6 @@ const SCENARIOS: ScriptScenario[] = [
         statusCode: 201,
         expectedCode: 201,
         latencyMs: 32,
-        requestPayload: '{"email":"user_7k2p@test.com","password":"P@ssw0rd123"}',
-        responseBody: '{"id":"usr_8f2c1","email":"user_7k2p@test.com"}',
         savedVars: { user_id: "usr_8f2c1", email: "user_7k2p@test.com" },
       },
       {
@@ -56,8 +48,6 @@ const SCENARIOS: ScriptScenario[] = [
         statusCode: 200,
         expectedCode: 200,
         latencyMs: 28,
-        requestPayload: '{"email":"user_7k2p@test.com","password":"P@ssw0rd123"}',
-        responseBody: '{"access_token":"eyJhbGciOiJIUzI1NiJ9.mock"}',
         savedVars: { user_token: "eyJhbGciOiJIUzI1NiJ9.mock" },
       },
       {
@@ -67,16 +57,12 @@ const SCENARIOS: ScriptScenario[] = [
         statusCode: 422,
         expectedCode: 422,
         latencyMs: 45,
-        requestPayload: '{"items":[{"product_id":"prod_1","quantity":999}]}',
-        responseBody: '{"error":"insufficient stock"}',
       },
     ],
   },
   {
     id: "login-wrong-password",
     name: "Login sai password",
-    setupsToRun: ["user"],
-    durationMs: 100,
     steps: [
       {
         call: "POST {auth}/api/register",
@@ -85,8 +71,6 @@ const SCENARIOS: ScriptScenario[] = [
         statusCode: 201,
         expectedCode: 201,
         latencyMs: 14,
-        requestPayload: '{"email":"user_9d1x@test.com","password":"P@ssw0rd123"}',
-        responseBody: '{"id":"usr_3a7d2","email":"user_9d1x@test.com"}',
         savedVars: { user_id: "usr_3a7d2", email: "user_9d1x@test.com" },
       },
       {
@@ -96,15 +80,10 @@ const SCENARIOS: ScriptScenario[] = [
         statusCode: 401,
         expectedCode: 401,
         latencyMs: 21,
-        requestPayload: '{"email":"user_9d1x@test.com","password":"sai_mat_khau"}',
-        responseBody: '{"error":"invalid credentials"}',
       },
     ],
   },
 ];
-
-const FLAT_STEPS = SCENARIOS.flatMap((scenario) => scenario.steps);
-const SCENARIO_NAMES = new Map(SCENARIOS.map((scenario) => [scenario.id, scenario.name]));
 
 function timestamp(): string {
   return new Date().toISOString();
@@ -134,47 +113,40 @@ function buildReport(run: MockRun): RunReport {
     (event): event is ScenarioCompleteEvent => event.type === "scenario_complete",
   );
 
-  const stepIndexes = new Map<string, number>();
-  const records: RunReportRecord[] = [];
+  const results: RunCaseResult[] = stepEvents.map((event) => ({
+    scenario_id: event.data.scenario_id,
+    call: event.data.call,
+    method: event.data.method,
+    url: event.data.url,
+    status: event.data.passed ? "PASS" : "FAIL",
+    http_status: event.data.status_code,
+    expected_http_status: event.data.expect,
+    latency_ms: event.data.latency_ms,
+    error: event.data.error,
+    saved_vars: event.data.saved_vars,
+  }));
 
-  for (const event of stepEvents) {
-    const step = FLAT_STEPS[records.length];
-    if (!step) break;
-
-    const stepIndex = (stepIndexes.get(event.data.scenario_id) ?? 0) + 1;
-    stepIndexes.set(event.data.scenario_id, stepIndex);
-
-    records.push({
-      scenario_id: event.data.scenario_id,
-      scenario_name: SCENARIO_NAMES.get(event.data.scenario_id) ?? event.data.scenario_id,
-      step_index: stepIndex,
-      call: step.call,
-      method: step.method,
-      url: step.url,
-      passed: event.data.passed,
-      status_code: event.data.status_code,
-      expected_code: event.data.expected_code,
-      latency_ms: event.data.latency_ms,
-      fail_reason: event.data.passed
-        ? ""
-        : `Expected ${event.data.expected_code}, received ${event.data.status_code}`,
-      ai_diagnosis: "",
-      request_payload: step.requestPayload,
-      response_body: step.responseBody,
-    });
-  }
+  const failed = results.filter((result) => result.status === "FAIL").length;
+  const status =
+    run.status === "cancelled" ? "cancelled" : failed > 0 ? "failed" : "passed";
 
   return {
+    id: run.id,
+    target_url: run.targetUrl,
     suite_path: run.suitePath,
-    status: run.status === "completed" ? "passed" : "cancelled",
-    start_time: new Date(run.startedAt).toISOString(),
-    end_time: timestamp(),
-    duration_ms: run.status === "completed" ? 254 : Date.now() - run.startedAt,
+    status,
     total_scenarios: SCENARIOS.length,
     passed_scenarios: scenarioEvents.filter((event) => event.data.passed).length,
     failed_scenarios: scenarioEvents.filter((event) => !event.data.passed).length,
-    skipped_scenarios: 0,
-    records,
+    skipped_scenarios: scenarioEvents.filter((event) => event.data.skipped).length,
+    total_cases: results.length,
+    passed: results.length - failed,
+    failed,
+    skipped: 0,
+    start_time: new Date(run.startedAt).toISOString(),
+    end_time: timestamp(),
+    duration_ms: Date.now() - run.startedAt,
+    results,
   };
 }
 
@@ -187,13 +159,14 @@ async function drive(run: MockRun): Promise<void> {
       type: "scenario_start",
       timestamp: timestamp(),
       message: `Executing scenario: ${scenario.id}`,
-      data: { scenario_id: scenario.id, scenario_name: scenario.name, setups_to_run: scenario.setupsToRun },
+      data: { scenario_id: scenario.id, scenario_name: scenario.name },
     });
 
     for (const step of scenario.steps) {
       await sleep(mockState.runDelayMs);
       if (!isActive(run)) return;
 
+      const passed = step.statusCode === step.expectedCode;
       emit(run, {
         type: "step_result",
         timestamp: timestamp(),
@@ -203,9 +176,12 @@ async function drive(run: MockRun): Promise<void> {
           method: step.method,
           url: step.url,
           status_code: step.statusCode,
-          expected_code: step.expectedCode,
+          expect: step.expectedCode,
           latency_ms: step.latencyMs,
-          passed: step.statusCode === step.expectedCode,
+          passed,
+          error: passed
+            ? undefined
+            : `Expected ${step.expectedCode}, received ${step.statusCode}`,
           saved_vars: step.savedVars,
         },
       });
@@ -217,29 +193,27 @@ async function drive(run: MockRun): Promise<void> {
     emit(run, {
       type: "scenario_complete",
       timestamp: timestamp(),
-      data: { scenario_id: scenario.id, passed: true, duration_ms: scenario.durationMs },
+      data: {
+        scenario_id: scenario.id,
+        passed: scenario.steps.every((step) => step.statusCode === step.expectedCode),
+      },
     });
   }
 
   await sleep(mockState.runDelayMs);
   if (!isActive(run)) return;
 
-  const totalChecks = FLAT_STEPS.length;
   run.status = "completed";
-  mockState.report = buildReport(run);
-  appendLog(`Test run completed: ${run.id} (${SCENARIOS.length}/${SCENARIOS.length} scenarios passed)`);
+  const report = buildReport(run);
+  mockState.report = report;
+  appendLog(
+    `Test run completed: ${run.id} (${report.passed_scenarios}/${report.total_scenarios} scenarios passed)`,
+  );
   emit(run, {
     type: "complete",
     timestamp: timestamp(),
     message: "All test scenarios completed",
-    data: {
-      total_scenarios: SCENARIOS.length,
-      passed_scenarios: SCENARIOS.length,
-      failed_scenarios: 0,
-      skipped_scenarios: 0,
-      total_checks: totalChecks,
-      duration_ms: 254,
-    },
+    data: { report },
   });
   run.subscribers.clear();
 }
@@ -265,7 +239,6 @@ function startRun(body: RunRequest): RunStartResponse {
     timestamp: timestamp(),
     message: "Beginning execution of suite",
     data: {
-      suite_path: body.suite_path,
       total_scenarios: SCENARIOS.length,
       servers: mockState.plan.servers,
     },
@@ -283,7 +256,7 @@ function startRun(body: RunRequest): RunStartResponse {
 }
 
 function badRequest(message: string) {
-  return HttpResponse.json({ success: false, error: message }, { status: 400 });
+  return HttpResponse.json({ error: true, message }, { status: 400 });
 }
 
 function runStream(run: MockRun, signal: AbortSignal): ReadableStream<Uint8Array> {
@@ -334,6 +307,16 @@ function runStream(run: MockRun, signal: AbortSignal): ReadableStream<Uint8Array
   });
 }
 
+function sseResponse(body: BodyInit) {
+  return new HttpResponse(body, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 export const runHandlers = [
   http.post("/api/run", async ({ request }) => {
     let body: RunRequest;
@@ -356,43 +339,57 @@ export const runHandlers = [
   http.get("/api/run/stream", ({ request }) => {
     const run = mockState.run;
     if (!run) {
-      return HttpResponse.json(
-        { success: false, error: "No test run available" },
-        { status: 404 },
+      const encoder = new TextEncoder();
+      return sseResponse(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "idle",
+                  timestamp: timestamp(),
+                  message: "No active test run is in progress",
+                })}\n\n`,
+              ),
+            );
+            controller.close();
+          },
+        }),
       );
     }
 
-    return new HttpResponse(runStream(run, request.signal), {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return sseResponse(runStream(run, request.signal));
   }),
 
   http.post("/api/run/cancel", () => {
     const run = mockState.run;
     if (!run || run.status !== "running") {
-      return HttpResponse.json(
-        { success: false, error: "No active test run to cancel" },
-        { status: 409 },
-      );
+      return HttpResponse.json({
+        success: false,
+        message: "no active test run is in progress",
+      });
     }
 
     run.status = "cancelled";
     mockState.report = buildReport(run);
     appendLog(`Test run cancelled: ${run.id}`);
-    emit(run, { type: "cancelled", timestamp: timestamp(), message: "Test run cancelled" });
+    emit(run, {
+      type: "cancelled",
+      timestamp: timestamp(),
+      message: "test run cancelled successfully",
+    });
     run.subscribers.clear();
 
-    return HttpResponse.json({ success: true, message: "Test run cancelled successfully" });
+    return HttpResponse.json({
+      success: true,
+      message: "test run cancelled successfully",
+    });
   }),
 
   http.get("/api/run/report", () => {
     if (!mockState.report) {
       return HttpResponse.json(
-        { success: false, error: "No test report available" },
+        { error: true, message: "no test runs recorded yet" },
         { status: 404 },
       );
     }

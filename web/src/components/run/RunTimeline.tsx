@@ -7,8 +7,11 @@ type RunTimelineProps = {
 };
 
 function markerTone(event: RunStreamEvent): string {
-  if (event.type === "step_result" || event.type === "scenario_complete") {
+  if (event.type === "step_result") {
     return event.data.passed ? "pass" : "fail";
+  }
+  if (event.type === "scenario_complete") {
+    return event.data.skipped ? "muted" : event.data.passed ? "pass" : "fail";
   }
   if (event.type === "complete") return "pass";
   if (event.type === "error") return "fail";
@@ -17,7 +20,11 @@ function markerTone(event: RunStreamEvent): string {
 }
 
 export function RunTimeline({ events, live = false }: RunTimelineProps) {
-  if (events.length === 0) {
+  const visible = events.filter(
+    (event) => event.type !== "connected" && event.type !== "idle",
+  );
+
+  if (visible.length === 0) {
     return <p className="st-timeline__empty">Chưa có sự kiện nào.</p>;
   }
 
@@ -27,7 +34,7 @@ export function RunTimeline({ events, live = false }: RunTimelineProps) {
       aria-live={live ? "polite" : undefined}
       aria-label="Diễn tiến lần chạy"
     >
-      {events.map((event, index) => (
+      {visible.map((event, index) => (
         <li
           key={`${event.type}-${index}`}
           className={`st-timeline__item st-timeline__item--${markerTone(event)}`}

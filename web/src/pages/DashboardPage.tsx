@@ -139,18 +139,20 @@ function PlanSection() {
 }
 
 function reportEvents(report: RunReport): RunStreamEvent[] {
-  return report.records.map((record) => ({
+  return report.results.map((result) => ({
     type: "step_result",
     timestamp: report.start_time,
     data: {
-      scenario_id: record.scenario_id,
-      call: record.call,
-      method: record.method,
-      url: record.url,
-      status_code: record.status_code,
-      expected_code: record.expected_code,
-      latency_ms: record.latency_ms,
-      passed: record.passed,
+      scenario_id: result.scenario_id,
+      call: result.call ?? result.endpoint ?? "",
+      method: result.method,
+      url: result.url ?? "",
+      status_code: result.http_status,
+      expect: result.expected_http_status,
+      latency_ms: result.latency_ms,
+      passed: result.status === "PASS",
+      error: result.error,
+      saved_vars: result.saved_vars,
     },
   }));
 }
