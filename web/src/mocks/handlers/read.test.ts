@@ -29,6 +29,40 @@ it("serves read endpoints with documented shapes", async () => {
   });
 });
 
+it("normalizes omitted collections in a sparse plan", async () => {
+  server.use(
+    http.get("/api/specs/plan", () =>
+      HttpResponse.json({
+        path: "spectest.yaml",
+        version: 1,
+        servers: null,
+        apis: [],
+        stats: {
+          total_scenarios: 1,
+          total_setups: 0,
+          total_steps: 1,
+          locked_scenarios: 0,
+          skipped_scenarios: 0,
+        },
+        scenarios: [
+          {
+            id: "sparse",
+            name: "Thiếu setup",
+            steps: [{ call: "GET {api}/health", expect: 200 }],
+          },
+        ],
+      }),
+    ),
+  );
+
+  const plan = await api.plan();
+
+  expect(plan.servers).toEqual([]);
+  expect(plan.setup).toEqual({});
+  expect(plan.seed).toEqual({});
+  expect(plan.scenarios[0]).toMatchObject({ setup: [], locked: false, skip: "" });
+});
+
 it("returns documented 404s", async () => {
   await expect(api.plan("missing.yaml")).rejects.toMatchObject({ status: 404 });
   await expect(api.history("missing")).rejects.toMatchObject({ status: 404 });

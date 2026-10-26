@@ -3,8 +3,10 @@ import { apiRequest, apiRequestForm } from "./client";
 import {
   toLLMConfig,
   toMarkdownResponse,
+  toPlanResponse,
   type RawConfig,
   type RawMarkdown,
+  type RawPlan,
 } from "./contracts";
 import type {
   ActionResponse,
@@ -19,7 +21,6 @@ import type {
   HealthcheckResponse,
   HistoryResponse,
   LogsResponse,
-  PlanResponse,
   RunReport,
   RunRequest,
   RunStartResponse,
@@ -55,7 +56,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  plan: (path?: string) => apiRequest<PlanResponse>(withQuery("/specs/plan", { path })),
+  plan: (path?: string) =>
+    apiRequest<RawPlan>(withQuery("/specs/plan", { path })).then(toPlanResponse),
   history: (path?: string) =>
     apiRequest<HistoryResponse>(withQuery("/specs/history", { path })),
   generate: (body: GenerateRequest) =>
