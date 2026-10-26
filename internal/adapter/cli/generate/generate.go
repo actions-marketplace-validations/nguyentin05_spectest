@@ -80,6 +80,10 @@ func runGenerate(cmd *cobra.Command, opts *options, f *cmdutil.Factory) error {
 		return err
 	}
 	if err := validateMode(opts.mode); err != nil {
+		// The update stub is an expected runtime outcome, not a usage error.
+		if opts.mode == "update" {
+			cmd.SilenceUsage = true
+		}
 		return err
 	}
 	if len(opts.apiValues) == 0 {
@@ -93,7 +97,12 @@ func runGenerate(cmd *cobra.Command, opts *options, f *cmdutil.Factory) error {
 		return fmt.Errorf("--output must not be empty")
 	}
 
-	if err := guardOverwrite(cmd.InOrStdin(), cmd.OutOrStdout(), opts.outputDir, opts.dryRun); err != nil {
+	// Declining the prompt and aborting on a pending marker are expected
+	// outcomes, so suppress Cobra's usage block from here on.
+	cmd.SilenceUsage = true
+	if err := guardOverwrite(
+		cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), opts.outputDir, opts.dryRun,
+	); err != nil {
 		return err
 	}
 

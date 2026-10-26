@@ -40,21 +40,33 @@ func TestGenerateCmd_HelpFlags(t *testing.T) {
 
 func TestGenerateCmd_UpdateModeNotImplemented(t *testing.T) {
 	cmd := NewCommand(cmdutil.NewFactory())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"--mode", "update"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "not implemented") {
 		t.Fatalf("error = %v, want update not implemented", err)
 	}
+	if strings.Contains(out.String(), "Usage:") {
+		t.Errorf("update stub must not print usage, got:\n%s", out.String())
+	}
 }
 
 func TestGenerateCmd_InvalidMode(t *testing.T) {
 	cmd := NewCommand(cmdutil.NewFactory())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"--mode", "migrate"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "must be init or update") {
 		t.Fatalf("error = %v, want invalid mode", err)
+	}
+	if !strings.Contains(out.String(), "Usage:") {
+		t.Errorf("invalid mode must still print usage, got:\n%s", out.String())
 	}
 }
 
@@ -92,8 +104,9 @@ func TestGenerateCmd_InitDeclineLeavesFilesUntouched(t *testing.T) {
 
 	cmd := NewCommand(cmdutil.NewFactory())
 	cmd.SetIn(strings.NewReader("n\n"))
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{"--api", "auth=whatever.yaml", "--output", dir})
 
 	err := cmd.Execute()
@@ -106,6 +119,16 @@ func TestGenerateCmd_InitDeclineLeavesFilesUntouched(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Overwrite") {
 		t.Fatal("expected confirmation prompt")
+	}
+	if !strings.HasSuffix(out.String(), "[y/N] \n") {
+		t.Fatalf("prompt output = %q, want a newline after the prompt", out.String())
+	}
+	if !strings.Contains(errOut.String(), "aborted") {
+		t.Fatalf("stderr = %q, want abort message", errOut.String())
+	}
+	combined := out.String() + errOut.String()
+	if strings.Contains(combined, "Usage:") {
+		t.Fatalf("decline must not print usage, got:\n%s", combined)
 	}
 }
 
@@ -120,5 +143,8 @@ func TestGenerateCmd_MissingAPI(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--api (-a) is missing") {
 		t.Fatalf("error = %v, want missing --api validation", err)
+	}
+	if !strings.Contains(out.String(), "Usage:") {
+		t.Errorf("missing --api must still print usage, got:\n%s", out.String())
 	}
 }

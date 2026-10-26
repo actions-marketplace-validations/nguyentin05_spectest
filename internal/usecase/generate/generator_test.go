@@ -144,3 +144,37 @@ func TestExecuteInitSmoke(t *testing.T) {
 		t.Errorf("Steps[0].Save[user_id] = %q, want %q", got, "body.id")
 	}
 }
+
+// TestExecuteDryRunWritesNothing verifies that a dry run reports no writes and
+// leaves a fresh output directory uncreated.
+func TestExecuteDryRunWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	apiPath := filepath.Join(dir, "openapi.yaml")
+	if err := os.WriteFile(apiPath, []byte(smokeOpenAPI), 0o644); err != nil {
+		t.Fatalf("write openapi: %v", err)
+	}
+	outDir := filepath.Join(dir, "out")
+
+	store := &recordingStore{inner: suitefile.NewStore()}
+	g := NewGenerator(smokeLLM{}, sources.NewLoader(), store, smokeClock{})
+
+	res, err := g.Execute(context.Background(), Request{
+		APIs:        []domain.APIInput{{Server: "default", Path: apiPath}},
+		OutputDir:   outDir,
+		DryRun:      true,
+		Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !res.NoFilesWritten {
+		t.Errorf("NoFilesWritten = false, want true")
+	}
+	if _, err := os.Stat(outDir); !os.IsNotExist(err) {
+		t.Errorf("output directory %s exists after dry run (stat err = %v)", outDir, err)
+	}
+	if len(store.opts) != 0 {
+		t.Errorf("Save called %d times, want 0", len(store.opts))
+	}
+}
