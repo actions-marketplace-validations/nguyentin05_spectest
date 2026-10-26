@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { RunReport } from "../api/types";
@@ -129,6 +129,39 @@ it("shows step errors and AI diagnosis from the real stream", async () => {
   expect(await screen.findByText(/Expected 422, received 500/)).toBeInTheDocument();
   expect(screen.getByText(/Thiếu quyền admin trong token\./)).toBeInTheDocument();
   expect(await screen.findByText("Hoàn tất · 0/1 kịch bản đạt")).toBeInTheDocument();
+});
+
+it("asks for a suite before running when none exists", async () => {
+  server.use(
+    http.get("/api/specs/plan", () =>
+      HttpResponse.json(
+        { error: true, message: "no spectest.yaml file found in workspace" },
+        { status: 404 },
+      ),
+    ),
+  );
+
+  renderAt("/run");
+
+  const title = await screen.findByRole("heading", { name: "Chưa có spectest.yaml" });
+  expect(
+    within(title.parentElement!).getByRole("link", { name: "Sinh kịch bản" }),
+  ).toHaveAttribute("href", "/generate");
+  expect(screen.queryByText("Backend chưa hỗ trợ cấu hình chạy.")).not.toBeInTheDocument();
+});
+
+it("explains when the backend cannot load the run configuration", async () => {
+  server.use(
+    http.get("/api/specs/plan", () =>
+      HttpResponse.json({ error: true, message: "not implemented" }, { status: 501 }),
+    ),
+  );
+
+  renderAt("/run");
+
+  expect(
+    await screen.findByText("Backend chưa hỗ trợ chạy kiểm thử."),
+  ).toBeInTheDocument();
 });
 
 it("cancels a run and reports it", async () => {

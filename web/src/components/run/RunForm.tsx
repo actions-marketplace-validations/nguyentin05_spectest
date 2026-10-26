@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import type { HealthcheckResponse, RunRequest } from "../../api/types";
 import { api } from "../../api/endpoints";
-import { isMissingEndpoint } from "../../api/errors";
+import { ApiError, isMissingEndpoint } from "../../api/errors";
 import { useApi } from "../../hooks/useApi";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { CapabilityNotice } from "../ui/CapabilityNotice";
 import { Card } from "../ui/Card";
+import { EmptyState } from "../ui/EmptyState";
 import { ErrorState } from "../ui/ErrorState";
 import { Field } from "../ui/Field";
 import { LoadingBlock } from "../ui/LoadingBlock";
@@ -46,8 +48,21 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
     return <LoadingBlock label="Đang tải cấu hình chạy…" rows={3} />;
   }
   if (loadError) {
+    if (plan.error instanceof ApiError && plan.error.status === 404) {
+      return (
+        <EmptyState
+          title="Chưa có spectest.yaml"
+          description="Hãy sinh kịch bản đầu tiên rồi quay lại chạy kiểm thử."
+          action={
+            <Link className="st-btn st-btn--secondary" to="/generate">
+              Sinh kịch bản
+            </Link>
+          }
+        />
+      );
+    }
     return isMissingEndpoint(loadError) ? (
-      <CapabilityNotice feature="cấu hình chạy" error={loadError} />
+      <CapabilityNotice feature="chạy kiểm thử" error={loadError} />
     ) : (
       <ErrorState
         error={loadError}
