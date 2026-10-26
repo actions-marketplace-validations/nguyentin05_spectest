@@ -131,6 +131,39 @@ it("shows step errors and AI diagnosis from the real stream", async () => {
   expect(await screen.findByText("Hoàn tất · 0/1 kịch bản đạt")).toBeInTheDocument();
 });
 
+it("treats a failed run as finished and shows its report", async () => {
+  server.use(
+    http.get("/api/run/stream", () =>
+      streamEvents([
+        {
+          type: "connected",
+          timestamp: "2026-10-26T10:00:00Z",
+          data: { run_id: "run-test", suite_path: "tests/spectest.yaml" },
+        },
+        {
+          type: "start",
+          timestamp: "2026-10-26T10:00:00Z",
+          message: "Beginning execution",
+          data: { total_scenarios: 1, servers: ["order"] },
+        },
+        {
+          type: "error",
+          timestamp: "2026-10-26T10:00:00.120Z",
+          message: "Suite execution failed",
+        },
+      ]),
+    ),
+    http.get("/api/run/report", () => HttpResponse.json(failedReport)),
+  );
+
+  renderAt("/run?run=run-test");
+
+  expect(await screen.findByText("Suite execution failed")).toBeInTheDocument();
+  const summary = await screen.findByLabelText("Tóm tắt lần chạy");
+  expect(within(summary).getByText("0/1")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Hủy phiên chạy" })).not.toBeInTheDocument();
+});
+
 it("asks for a suite before running when none exists", async () => {
   server.use(
     http.get("/api/specs/plan", () =>

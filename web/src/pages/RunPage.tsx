@@ -18,7 +18,7 @@ import { RunSummary } from "../components/run/RunSummary";
 import { RunTimeline } from "../components/run/RunTimeline";
 
 type StartEvent = Extract<RunStreamEvent, { type: "start" }>;
-type EndEvent = Extract<RunStreamEvent, { type: "complete" | "cancelled" }>;
+type EndEvent = Extract<RunStreamEvent, { type: "complete" | "cancelled" | "error" }>;
 
 type ReportState = {
   report: RunReport | null;
@@ -32,7 +32,9 @@ function findEndEvent(events: RunStreamEvent[]): EndEvent | undefined {
     .reverse()
     .find(
       (event): event is EndEvent =>
-        event.type === "complete" || event.type === "cancelled",
+        event.type === "complete" ||
+        event.type === "cancelled" ||
+        event.type === "error",
     );
 }
 
@@ -182,7 +184,9 @@ export function RunPage() {
     : endEvent
       ? endEvent.type === "cancelled"
         ? "Đã hủy"
-        : "Hoàn tất"
+        : endEvent.type === "error"
+          ? "Lỗi"
+          : "Hoàn tất"
       : connected
         ? "Đang chạy"
         : "Đã dừng";
@@ -191,7 +195,9 @@ export function RunPage() {
     : endEvent
       ? endEvent.type === "cancelled"
         ? "skip"
-        : "pass"
+        : endEvent.type === "error"
+          ? "fail"
+          : "pass"
       : connected
         ? "live"
         : "skip";
