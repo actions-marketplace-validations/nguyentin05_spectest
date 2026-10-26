@@ -101,7 +101,15 @@ function SettingsForm({ config, onSaved }: { config: LLMConfig; onSaved: () => v
     setTesting(true);
     try {
       const result = await api.testConfig(payload());
-      setPing(`Kết nối thành công · ${result.latency_ms} ms`);
+      if (!result.success) {
+        setError(result.message || "Kiểm tra kết nối thất bại");
+        return;
+      }
+      setPing(
+        result.latency_ms === undefined
+          ? "Kết nối thành công"
+          : `Kết nối thành công · ${result.latency_ms} ms`,
+      );
     } catch (cause) {
       setError(errorMessage(cause, "Kiểm tra kết nối thất bại"));
     } finally {

@@ -1,5 +1,6 @@
 import { withQuery } from "../lib/url";
 import { apiRequest, apiRequestForm } from "./client";
+import { toLLMConfig, type RawConfig } from "./contracts";
 import type {
   ActionResponse,
   ConfigTestRequest,
@@ -12,7 +13,6 @@ import type {
   HealthcheckRequest,
   HealthcheckResponse,
   HistoryResponse,
-  LLMConfig,
   LogsResponse,
   MarkdownResponse,
   PlanResponse,
@@ -27,7 +27,7 @@ import type {
 export const api = {
   health: () => apiRequest<HealthResponse>("/health"),
   logs: () => apiRequest<LogsResponse>("/logs"),
-  getConfig: () => apiRequest<LLMConfig>("/config"),
+  getConfig: () => apiRequest<RawConfig>("/config").then(toLLMConfig),
   saveConfig: (body: ConfigUpdateRequest) =>
     apiRequest<ActionResponse>("/config", { method: "POST", body: JSON.stringify(body) }),
   testConfig: (body: ConfigTestRequest) =>

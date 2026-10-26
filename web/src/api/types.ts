@@ -32,10 +32,10 @@ export type ConfigTestRequest = {
 
 export type ConfigTestResponse = {
   success: boolean;
-  latency_ms: number;
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
   message: string;
+  latency_ms?: number;
 };
 
 export type HealthcheckRequest = {
