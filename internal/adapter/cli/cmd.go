@@ -34,8 +34,10 @@ func NewSpectestCmd() *cobra.Command {
 		Short:         "SpecTest: LLM-based API Testing Engine",
 		SilenceErrors: true,
 		Long: `SpecTest is an open-source, cost-efficient LLM test engineering engine that
-converts software requirements (OpenAPI & PRD Markdown) into executable test suites,
-runs multi-tier API assertions, and evolves tests when specifications change.`,
+generates an initial API test suite from OpenAPI documents and optional raw
+requirements, and manages the resulting suite, log, and track files along with
+their configuration. Incremental test updates are reserved for a future release
+and are not implemented yet.`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if f.Verbose {
 				slog.SetDefault(logger.New("debug"))

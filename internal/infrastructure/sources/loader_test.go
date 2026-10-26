@@ -164,6 +164,28 @@ func TestLoad_NoRequirements(t *testing.T) {
 	}
 }
 
+func TestLoad_InputMode(t *testing.T) {
+	dir := t.TempDir()
+	apiPath := writeFile(t, dir, "api.yaml", openAPIDoc("/users", "get"))
+
+	withoutReq, err := NewLoader().Load(context.Background(), []domain.APIInput{{Server: "default", Path: apiPath}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutReq.Input != domain.InputOpenAPI {
+		t.Fatalf("Input = %q, want openapi", withoutReq.Input)
+	}
+
+	reqPath := writeFile(t, dir, "requirements.md", "users must be listed\n")
+	withReq, err := NewLoader().Load(context.Background(), []domain.APIInput{{Server: "default", Path: apiPath}}, reqPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withReq.Input != domain.InputBoth {
+		t.Fatalf("Input = %q, want both", withReq.Input)
+	}
+}
+
 func TestLoad_MissingFileErrorNamesPath(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "does-not-exist.yaml")

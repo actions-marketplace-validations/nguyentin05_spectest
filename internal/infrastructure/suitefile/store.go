@@ -42,6 +42,21 @@ type pendingMarker struct {
 	TrackHash string `json:"track_hash"`
 }
 
+// checkPendingMarker returns a descriptive error when dir contains the pending
+// marker written before artifacts, indicating a possibly interrupted write.
+func checkPendingMarker(dir string) error {
+	markerPath := filepath.Join(dir, PendingMarkerName)
+	if _, err := os.Stat(markerPath); err == nil {
+		return fmt.Errorf(
+			"pending write marker %s exists: a previous write may have been interrupted; check %s, %s, and %s for consistency, then remove %s before retrying",
+			markerPath, SuiteFileName, LogFileName, TrackFileName, markerPath,
+		)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("check pending marker %s: %w", markerPath, err)
+	}
+	return nil
+}
+
 // Load reads the three files in dir. Missing files yield nil members without
 // creating or repairing anything. A pending marker aborts the load before any
 // artifact is parsed.
@@ -50,14 +65,8 @@ func (s *Store) Load(ctx context.Context, dir string) (*domain.FileSet, error) {
 		return nil, err
 	}
 
-	markerPath := filepath.Join(dir, PendingMarkerName)
-	if _, err := os.Stat(markerPath); err == nil {
-		return nil, fmt.Errorf(
-			"pending write marker %s exists: a previous write may have been interrupted; check %s, %s, and %s for consistency, then remove %s before retrying",
-			markerPath, SuiteFileName, LogFileName, TrackFileName, markerPath,
-		)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("check pending marker %s: %w", markerPath, err)
+	if err := checkPendingMarker(dir); err != nil {
+		return nil, err
 	}
 
 	suite, err := loadArtifact(filepath.Join(dir, SuiteFileName), decodeSuite)
@@ -85,6 +94,9 @@ func (s *Store) Save(ctx context.Context, dir string, files *domain.FileSet, opt
 	}
 	if files == nil {
 		return errors.New("suitefile: cannot save: file set is nil")
+	}
+	if err := checkPendingMarker(dir); err != nil {
+		return err
 	}
 
 	type artifact struct {

@@ -18,6 +18,7 @@ import (
 func sampleFileSet() *domain.FileSet {
 	suite := &domain.Suite{
 		Version:  1,
+		Input:    domain.InputBoth,
 		Servers:  []string{"auth", "order"},
 		APIs:     []string{"POST {auth}/api/login", "POST {order}/api/orders"},
 		Analysis: "Test the authentication and ordering flows.",
@@ -90,6 +91,7 @@ func sampleFileSet() *domain.FileSet {
 
 	track := &domain.TrackFile{
 		LastUpdate: 1,
+		Input:      domain.InputBoth,
 		Sources: domain.Sources{
 			OpenAPI: map[string]domain.FileState{
 				"auth":  {File: "openapi/auth.yaml", Hash: "111111111111"},
@@ -255,6 +257,24 @@ func TestStore_LoadPendingMarker(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "remove") {
 		t.Errorf("Load() error = %q, want guidance to remove the marker", err)
+	}
+}
+
+func TestStore_SaveAbortsOnPendingMarker(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, PendingMarkerName)
+	if err := os.WriteFile(marker, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := NewStore().Save(context.Background(), dir, sampleFileSet(), domain.WriteOptions{
+		Suite: true, Log: true, Track: true, Mode: "initial",
+	})
+	if err == nil || !strings.Contains(err.Error(), PendingMarkerName) {
+		t.Fatalf("Save() error = %v, want pending marker", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, SuiteFileName)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("Save() wrote suite despite marker: %v", statErr)
 	}
 }
 

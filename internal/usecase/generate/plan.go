@@ -121,9 +121,7 @@ func (g *Generator) planGlobal(ctx context.Context, in *planInput) (*globalPlan,
 	})
 
 	var warns []string
-	for _, p := range seedNoteProblems(in.Notes, plan.Seed) {
-		warns = append(warns, p)
-	}
+	warns = append(warns, seedNoteProblems(in.Notes, plan.Seed)...)
 	return plan, warns, nil
 }
 

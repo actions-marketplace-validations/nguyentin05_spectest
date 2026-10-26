@@ -28,6 +28,33 @@ func TestSpectestCmd_HelpAndSubcommands(t *testing.T) {
 	}
 }
 
+func TestSpectestCmd_HelpIsInitOnly(t *testing.T) {
+	cmd := NewSpectestCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute --help failed: %v", err)
+	}
+
+	got := out.String()
+	for _, stale := range []string{
+		"runs multi-tier API assertions",
+		"evolves tests when specifications change",
+	} {
+		if strings.Contains(got, stale) {
+			t.Errorf("help output must not promise %q, got:\n%s", stale, got)
+		}
+	}
+	for _, want := range []string{"initial API test suite", "not implemented"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("help output missing %q, got:\n%s", want, got)
+		}
+	}
+}
+
 func TestSpectestCmd_Version(t *testing.T) {
 	cmd := NewSpectestCmd()
 	var out bytes.Buffer
