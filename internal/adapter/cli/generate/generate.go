@@ -88,6 +88,10 @@ func runGenerate(cmd *cobra.Command, opts *options, f *cmdutil.Factory) error {
 		return fmt.Errorf("--output must not be empty")
 	}
 
+	if err := guardOverwrite(cmd.InOrStdin(), cmd.OutOrStdout(), opts.outputDir, opts.dryRun); err != nil {
+		return err
+	}
+
 	llmSvc, err := f.LLMService()
 	if err != nil {
 		return err

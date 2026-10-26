@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nguyentin05/spectest/internal/adapter/cli/cmdutil"
+	"github.com/nguyentin05/spectest/internal/infrastructure/suitefile"
 )
 
 func TestGenerateCmd_HelpFlags(t *testing.T) {
@@ -77,6 +80,32 @@ func TestGenerateCmd_RejectsPositionalArgs(t *testing.T) {
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected positional argument to be rejected")
+	}
+}
+
+func TestGenerateCmd_InitDeclineLeavesFilesUntouched(t *testing.T) {
+	dir := t.TempDir()
+	suitePath := filepath.Join(dir, suitefile.SuiteFileName)
+	if err := os.WriteFile(suitePath, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewCommand(cmdutil.NewFactory())
+	cmd.SetIn(strings.NewReader("n\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--api", "auth=whatever.yaml", "--output", dir})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "aborted") {
+		t.Fatalf("error = %v, want abort", err)
+	}
+	got, _ := os.ReadFile(suitePath)
+	if string(got) != "keep" {
+		t.Fatalf("suite changed to %q, want keep", got)
+	}
+	if !strings.Contains(out.String(), "Overwrite") {
+		t.Fatal("expected confirmation prompt")
 	}
 }
 
