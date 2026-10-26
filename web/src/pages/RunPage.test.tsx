@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import type { RunReport } from "../api/types";
+import type { RunReport, RunRequest } from "../api/types";
 import { mockState } from "../mocks/store";
 import { server } from "../mocks/server";
 import { renderAt } from "../test/render";
@@ -245,6 +245,43 @@ it("defaults the suite to the plan path when the workspace does not list it", as
   );
   await userEvent.click(screen.getByRole("button", { name: "Bắt đầu chạy" }));
   await waitFor(() => expect(sentSuite).toBe("custom/plan.yaml"));
+});
+
+it("sends AI triage, change-only, and a custom log path", async () => {
+  let body: RunRequest | null = null;
+  server.use(
+    http.post("/api/run", async ({ request }) => {
+      body = (await request.json()) as RunRequest;
+      return HttpResponse.json({
+        run_id: "run-options",
+        status: "running",
+        message: "",
+        target_url: "",
+        suite_path: "",
+      });
+    }),
+  );
+
+  renderAt("/run");
+  await userEvent.type(
+    await screen.findByLabelText("Địa chỉ máy chủ đích"),
+    "http://localhost:8080",
+  );
+  await userEvent.click(screen.getByRole("checkbox", { name: "Chẩn đoán AI khi lỗi" }));
+  await userEvent.click(screen.getByRole("checkbox", { name: "Chỉ chạy thay đổi" }));
+  await userEvent.type(
+    screen.getByLabelText("Tệp log lịch sử (tuỳ chọn)"),
+    "tests/custom.log.yaml",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Bắt đầu chạy" }));
+
+  await waitFor(() =>
+    expect(body).toMatchObject({
+      triage: true,
+      only_changed: true,
+      log_path: "tests/custom.log.yaml",
+    }),
+  );
 });
 
 it("explains when the backend cannot load the run configuration", async () => {

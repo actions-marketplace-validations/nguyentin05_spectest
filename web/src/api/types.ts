@@ -210,6 +210,9 @@ export type RunRequest = {
   target_url?: string;
   targets?: Record<string, string>;
   timeout_seconds?: number;
+  triage?: boolean;
+  only_changed?: boolean;
+  log_path?: string;
 };
 
 export type RunStartResponse = {

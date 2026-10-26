@@ -8,6 +8,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { CapabilityNotice } from "../ui/CapabilityNotice";
 import { Card } from "../ui/Card";
+import { Checkbox } from "../ui/Checkbox";
 import { EmptyState } from "../ui/EmptyState";
 import { ErrorState } from "../ui/ErrorState";
 import { Field } from "../ui/Field";
@@ -37,6 +38,9 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
   const [targetUrl, setTargetUrl] = useState("");
   const [perServer, setPerServer] = useState<Record<string, string>>({});
   const [timeoutSeconds, setTimeoutSeconds] = useState("30");
+  const [triage, setTriage] = useState(false);
+  const [onlyChanged, setOnlyChanged] = useState(false);
+  const [logPath, setLogPath] = useState("");
   const [checking, setChecking] = useState(false);
   const [starting, setStarting] = useState(false);
   const [health, setHealth] = useState<HealthcheckResponse[] | null>(null);
@@ -137,6 +141,9 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
     const body: RunRequest = {
       suite_path: selectedSuite,
       timeout_seconds: seconds,
+      triage,
+      only_changed: onlyChanged,
+      ...(logPath.trim() ? { log_path: logPath.trim() } : {}),
       ...(mode === "single"
         ? { target_url: targets[0] }
         : {
@@ -250,6 +257,26 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
             Kiểm tra máy chủ
           </Button>
         </div>
+
+        <div className="st-run-form__options">
+          <Checkbox checked={triage} onChange={(event) => setTriage(event.target.checked)}>
+            Chẩn đoán AI khi lỗi
+          </Checkbox>
+          <Checkbox
+            checked={onlyChanged}
+            onChange={(event) => setOnlyChanged(event.target.checked)}
+          >
+            Chỉ chạy thay đổi
+          </Checkbox>
+        </div>
+
+        <Field id="run-log-path" label="Tệp log lịch sử (tuỳ chọn)">
+          <input
+            value={logPath}
+            onChange={(event) => setLogPath(event.target.value)}
+            placeholder="tests/spectest.log.yaml"
+          />
+        </Field>
 
         {health && health.length > 0 && (
           <div className="st-run-form__health">
