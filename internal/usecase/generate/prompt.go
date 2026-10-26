@@ -106,7 +106,7 @@ Return exactly ONE JSON object:
 Rules:
 ` + jsonRule + `
 - Return exactly one entry per scenario in the input, with the same "id". Nothing else: no vars, name or setup.
-- Every step's "call" must equal the "key" of one entry in "allowed_apis".
+- Every step's "call" must equal the "key" of one entry in that scenario's "allowed_apis".
 - Variable syntax:
   * seed vars: dotted form {{seedName.varName}}. Never use the bare form for seed vars.
   * names saved by that scenario's "setup_closure" or by its own earlier steps: bare {{saveName}}.

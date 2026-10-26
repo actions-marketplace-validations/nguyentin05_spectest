@@ -21,6 +21,9 @@ func TestSynthesisPromptsUseAllowedAPIKeys(t *testing.T) {
 		if !strings.Contains(prompt, `"key"`) || !strings.Contains(prompt, `"allowed_apis"`) {
 			t.Errorf("%s prompt must tell the model to use the key field", name)
 		}
+		if name == "scenario" && !strings.Contains(prompt, `that scenario's "allowed_apis"`) {
+			t.Error("scenario prompt must scope allowed_apis to the scenario")
+		}
 	}
 }
 
