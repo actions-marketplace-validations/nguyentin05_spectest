@@ -34,7 +34,13 @@ it("runs the full SSE lifecycle and produces a report", async () => {
   ]);
   const report = await api.report();
   expect(report).toMatchObject({ status: "passed", passed_scenarios: 2, failed_scenarios: 0 });
-  expect(report.records).toHaveLength(5);
+  expect(report.results).toHaveLength(5);
+  expect(report.results[0]).toMatchObject({
+    scenario_id: "order-over-stock",
+    status: "PASS",
+    http_status: 201,
+    expected_http_status: 201,
+  });
 });
 
 it("replays events for a late subscriber", async () => {

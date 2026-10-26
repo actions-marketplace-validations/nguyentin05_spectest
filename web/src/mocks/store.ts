@@ -1,6 +1,6 @@
+import type { RawConfig } from "../api/contracts";
 import type {
   HistoryResponse,
-  LLMConfig,
   PlanResponse,
   RunReport,
   RunStreamEvent,
@@ -26,7 +26,7 @@ export type MockRun = {
 };
 
 export type MockState = {
-  config: LLMConfig;
+  config: RawConfig;
   workspace: WorkspaceItem[];
   plan: PlanResponse;
   history: HistoryResponse;

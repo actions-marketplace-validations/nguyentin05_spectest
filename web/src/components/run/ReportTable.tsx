@@ -1,24 +1,17 @@
-import type { RunReportRecord } from "../../api/types";
+import type { RunCaseResult } from "../../api/types";
 import { formatDurationMs } from "../../lib/format";
 import { JsonTree } from "../data/JsonTree";
 import { MethodPill } from "../data/MethodPill";
 import { StatusBadge } from "../data/StatusBadge";
 
-function parsePayload(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return value;
-  }
+function resultTone(status: RunCaseResult["status"]) {
+  if (status === "PASS") return "passed";
+  if (status === "FAIL") return "failed";
+  return "skipped";
 }
 
-function Payload({ label, raw }: { label: string; raw: string }) {
-  if (!raw) return <p className="st-report__empty">Không có dữ liệu.</p>;
-  return <JsonTree value={parsePayload(raw)} name={label} />;
-}
-
-export function ReportTable({ records }: { records: RunReportRecord[] }) {
-  if (records.length === 0) {
+export function ReportTable({ results }: { results: RunCaseResult[] }) {
+  if (results.length === 0) {
     return <p className="st-report__empty">Báo cáo chưa có bản ghi nào.</p>;
   }
 
@@ -37,35 +30,33 @@ export function ReportTable({ records }: { records: RunReportRecord[] }) {
             </tr>
           </thead>
           <tbody>
-            {records.map((record, index) => (
-              <tr key={`${record.scenario_id}-${record.step_index}-${index}`}>
+            {results.map((result, index) => (
+              <tr key={`${result.scenario_id}-${result.step_id ?? index}`}>
                 <td>
-                  <span className="st-report__scenario">{record.scenario_name}</span>
-                  <code className="st-report__id">{record.scenario_id}</code>
+                  <code className="st-report__id">{result.scenario_id}</code>
                 </td>
-                <td className="st-report__step">#{record.step_index}</td>
+                <td className="st-report__step">
+                  {result.step_id ?? result.case_id ?? "—"}
+                </td>
                 <td>
                   <div className="st-report__call">
-                    <MethodPill method={record.method} />
-                    <code>{record.call}</code>
+                    <MethodPill method={result.method} />
+                    <code>{result.call ?? result.endpoint ?? "—"}</code>
                   </div>
                   <details className="st-report__details">
-                    <summary>Yêu cầu / Phản hồi</summary>
+                    <summary>Chi tiết bước</summary>
                     <div className="st-report__details-body">
                       <p className="st-report__url">
                         <span>URL</span>
-                        <code>{record.url}</code>
+                        <code>{result.url ?? "—"}</code>
                       </p>
-                      <Payload label="request_payload" raw={record.request_payload} />
-                      <Payload label="response_body" raw={record.response_body} />
-                      {record.fail_reason && (
+                      {result.saved_vars &&
+                        Object.keys(result.saved_vars).length > 0 && (
+                          <JsonTree value={result.saved_vars} name="saved_vars" />
+                        )}
+                      {result.error && (
                         <p className="st-report__reason">
-                          <strong>Lỗi:</strong> {record.fail_reason}
-                        </p>
-                      )}
-                      {record.ai_diagnosis && (
-                        <p className="st-report__reason">
-                          <strong>Chẩn đoán AI:</strong> {record.ai_diagnosis}
+                          <strong>Lỗi:</strong> {result.error}
                         </p>
                       )}
                     </div>
@@ -73,14 +64,16 @@ export function ReportTable({ records }: { records: RunReportRecord[] }) {
                 </td>
                 <td>
                   <span className="st-report__codes">
-                    <code>{record.status_code}</code>
+                    <code>{result.http_status}</code>
                     <span aria-hidden="true"> / </span>
-                    <code>{record.expected_code}</code>
+                    <code>{result.expected_http_status}</code>
                   </span>
                 </td>
-                <td className="st-report__latency">{formatDurationMs(record.latency_ms)}</td>
+                <td className="st-report__latency">
+                  {formatDurationMs(result.latency_ms)}
+                </td>
                 <td>
-                  <StatusBadge value={record.passed ? "passed" : "failed"} />
+                  <StatusBadge value={resultTone(result.status)} />
                 </td>
               </tr>
             ))}

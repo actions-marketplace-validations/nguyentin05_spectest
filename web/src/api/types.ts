@@ -32,10 +32,10 @@ export type ConfigTestRequest = {
 
 export type ConfigTestResponse = {
   success: boolean;
-  latency_ms: number;
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
   message: string;
+  latency_ms?: number;
 };
 
 export type HealthcheckRequest = {
@@ -220,83 +220,103 @@ export type RunStartResponse = {
 
 export type RunStreamEvent =
   | {
+      type: "connected";
+      timestamp: string;
+      message?: string;
+      data?: { run_id: string; target_url?: string; suite_path?: string };
+    }
+  | { type: "idle"; timestamp: string; message?: string }
+  | {
       type: "start";
       timestamp: string;
       message: string;
-      data: { suite_path: string; total_scenarios: number; servers: string[] };
+      data: {
+        total_scenarios: number;
+        servers: string[];
+        targets?: Record<string, string>;
+      };
     }
   | {
       type: "scenario_start";
       timestamp: string;
       message: string;
-      data: { scenario_id: string; scenario_name: string; setups_to_run: string[] };
+      data: { scenario_id: string; scenario_name: string };
     }
   | {
       type: "step_result";
       timestamp: string;
       data: {
         scenario_id: string;
+        setup?: string;
         call: string;
         method: string;
         url: string;
         status_code: number;
-        expected_code: number;
+        expect: number;
         latency_ms: number;
         passed: boolean;
-        saved_vars?: Record<string, string>;
+        error?: string;
+        saved_vars?: Record<string, unknown>;
+        ai_diagnosis?: string;
       };
     }
   | {
       type: "scenario_complete";
       timestamp: string;
-      data: { scenario_id: string; passed: boolean; duration_ms: number };
+      data: {
+        scenario_id: string;
+        passed: boolean;
+        skipped?: boolean;
+        reason?: string;
+      };
     }
   | {
       type: "complete";
       timestamp: string;
       message: string;
-      data: {
-        total_scenarios: number;
-        passed_scenarios: number;
-        failed_scenarios: number;
-        skipped_scenarios: number;
-        total_checks: number;
-        duration_ms: number;
-      };
+      data: { report: RunReport };
     }
   | { type: "error"; timestamp: string; message: string; data?: unknown }
   | { type: "cancelled"; timestamp: string; message?: string; data?: unknown };
 
-export type RunReportStatus = "passed" | "failed" | "cancelled";
+export type RunReportStatus = "passed" | "failed" | "cancelled" | "running";
 
-export type RunReportRecord = {
+export type RunCaseResult = {
   scenario_id: string;
-  scenario_name: string;
-  step_index: number;
-  call: string;
+  step_id?: string;
+  case_id?: string;
+  call?: string;
+  endpoint?: string;
+  url?: string;
   method: string;
-  url: string;
-  passed: boolean;
-  status_code: number;
-  expected_code: number;
+  status: "PASS" | "FAIL" | "SKIPPED" | "CANCELLED";
+  http_status: number;
+  expected_http_status: number;
   latency_ms: number;
-  fail_reason: string;
-  ai_diagnosis: string;
-  request_payload: string;
-  response_body: string;
+  error?: string;
+  saved_vars?: Record<string, unknown>;
 };
 
 export type RunReport = {
+  id: string;
+  target_url?: string;
+  targets?: Record<string, string>;
   suite_path: string;
   status: RunReportStatus;
-  start_time: string;
-  end_time: string;
-  duration_ms: number;
   total_scenarios: number;
   passed_scenarios: number;
   failed_scenarios: number;
   skipped_scenarios: number;
-  records: RunReportRecord[];
+  total_cases: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  start_time: string;
+  end_time: string;
+  duration_ms: number;
+  results: RunCaseResult[];
+  selection_mode?: string;
+  update_n?: number;
 };
 
 export type MarkdownResponse = {

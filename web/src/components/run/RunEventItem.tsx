@@ -6,6 +6,9 @@ import { StatusBadge } from "../data/StatusBadge";
 
 export function RunEventItem({ event }: { event: RunStreamEvent }) {
   switch (event.type) {
+    case "connected":
+    case "idle":
+      return null;
     case "start":
       return (
         <>
@@ -16,16 +19,7 @@ export function RunEventItem({ event }: { event: RunStreamEvent }) {
         </>
       );
     case "scenario_start":
-      return (
-        <>
-          <p className="st-timeline__title">{event.data.scenario_name}</p>
-          <p className="st-timeline__meta">
-            {event.data.setups_to_run.length > 0
-              ? `Setup: ${event.data.setups_to_run.join(", ")}`
-              : "Không dùng setup"}
-          </p>
-        </>
-      );
+      return <p className="st-timeline__title">{event.data.scenario_name}</p>;
     case "step_result":
       return (
         <>
@@ -38,14 +32,24 @@ export function RunEventItem({ event }: { event: RunStreamEvent }) {
             <span className="st-run-event__status">
               <code>{event.data.status_code}</code>
               <span aria-hidden="true"> / </span>
-              <code>{event.data.expected_code}</code>
+              <code>{event.data.expect}</code>
             </span>
             <span className="st-timeline__meta">
               {formatDurationMs(event.data.latency_ms)}
             </span>
           </div>
+          {event.data.error && (
+            <p className="st-run-event__diagnosis">
+              <strong>Lỗi:</strong> {event.data.error}
+            </p>
+          )}
+          {event.data.ai_diagnosis && (
+            <p className="st-run-event__diagnosis">
+              <strong>Chẩn đoán AI:</strong> {event.data.ai_diagnosis}
+            </p>
+          )}
           <details className="st-run-event__details">
-            <summary>Yêu cầu / Phản hồi</summary>
+            <summary>Chi tiết bước</summary>
             <div className="st-run-event__details-body">
               <p className="st-run-event__url">
                 <span>URL</span>
@@ -57,32 +61,38 @@ export function RunEventItem({ event }: { event: RunStreamEvent }) {
               ) : (
                 <p className="st-timeline__meta">Không có biến được lưu.</p>
               )}
-              <p className="st-timeline__meta">
-                Payload đầy đủ nằm trong báo cáo chi tiết sau khi chạy xong.
-              </p>
             </div>
           </details>
         </>
       );
-    case "scenario_complete":
+    case "scenario_complete": {
+      const status = event.data.skipped
+        ? "skipped"
+        : event.data.passed
+          ? "passed"
+          : "failed";
       return (
         <>
           <div className="st-timeline__line">
             <p className="st-timeline__title">Kết thúc {event.data.scenario_id}</p>
-            <StatusBadge value={event.data.passed ? "passed" : "failed"} />
+            <StatusBadge value={status} />
           </div>
-          <p className="st-timeline__meta">{formatDurationMs(event.data.duration_ms)}</p>
+          {event.data.reason && (
+            <p className="st-timeline__meta">{event.data.reason}</p>
+          )}
         </>
       );
+    }
     case "complete":
       return (
         <>
           <p className="st-timeline__title">
-            Hoàn tất · {event.data.passed_scenarios}/{event.data.total_scenarios} kịch bản đạt
+            Hoàn tất · {event.data.report.passed_scenarios}/
+            {event.data.report.total_scenarios} kịch bản đạt
           </p>
           <p className="st-timeline__meta">
-            {event.data.failed_scenarios} lỗi · {event.data.skipped_scenarios} bỏ qua ·{" "}
-            {formatDurationMs(event.data.duration_ms)}
+            {event.data.report.failed_scenarios} lỗi ·{" "}
+            {event.data.report.skipped_scenarios} bỏ qua
           </p>
         </>
       );

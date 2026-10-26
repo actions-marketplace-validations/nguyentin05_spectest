@@ -1,4 +1,6 @@
+import { http, HttpResponse } from "msw";
 import { api } from "../../api/endpoints";
+import { server } from "../server";
 import { resetMockStore } from "../store";
 
 beforeEach(resetMockStore);
@@ -30,5 +32,34 @@ it("serves read endpoints with documented shapes", async () => {
 it("returns documented 404s", async () => {
   await expect(api.plan("missing.yaml")).rejects.toMatchObject({ status: 404 });
   await expect(api.history("missing")).rejects.toMatchObject({ status: 404 });
-  await expect(api.markdown("docs/missing.md")).rejects.toMatchObject({ status: 404 });
+  await expect(api.markdown("docs/missing.md")).rejects.toMatchObject({ status: 400 });
+});
+
+it("reads markdown with POST and the path body", async () => {
+  let method = "";
+  let body: unknown;
+  server.use(
+    http.post("/api/markdown/read", async ({ request }) => {
+      method = request.method;
+      body = await request.json();
+      return HttpResponse.json({
+        path: "docs/requirements.md",
+        title: "Requirements",
+        sections: [],
+        table_count: 1,
+        line_count: 2,
+        raw_content: "# Requirements",
+      });
+    }),
+  );
+
+  const doc = await api.markdown("docs/requirements.md");
+
+  expect(method).toBe("POST");
+  expect(body).toMatchObject({ path: "docs/requirements.md" });
+  expect(doc).toMatchObject({
+    path: "docs/requirements.md",
+    file_name: "requirements.md",
+    content: "# Requirements",
+  });
 });

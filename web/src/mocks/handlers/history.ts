@@ -3,10 +3,10 @@ import { mockState } from "../store";
 
 export const historyHandlers = [
   http.get("/api/specs/history", ({ request }) => {
-    const dir = new URL(request.url).searchParams.get("dir");
-    if (dir === "missing") {
+    const path = new URL(request.url).searchParams.get("path");
+    if (path === "missing") {
       return HttpResponse.json(
-        { success: false, error: `History file not found: ${dir}` },
+        { error: true, message: "no spectest.log.yaml file found in workspace" },
         { status: 404 },
       );
     }

@@ -1,7 +1,7 @@
+import type { RawConfig } from "../api/contracts";
 import type {
   HealthResponse,
   HistoryResponse,
-  LLMConfig,
   PlanResponse,
   WorkspaceItem,
 } from "../api/types";
@@ -14,11 +14,12 @@ export const healthFixture: HealthResponse = {
   work_dir: workspaceDir,
 };
 
-export function createConfigFixture(): LLMConfig {
+export function createConfigFixture(): RawConfig {
   return {
-    provider: "gemini",
-    model: "gemini-1.5-flash",
-    endpoint: "https://generativelanguage.googleapis.com",
+    config_file: `${workspaceDir}/.spectest/credentials.yaml`,
+    default_provider: "gemini",
+    active_model: "gemini-1.5-flash",
+    endpoint_url: "https://generativelanguage.googleapis.com",
     has_api_key: true,
     api_key_masked: "AIzaSy...4xK9",
   };

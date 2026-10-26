@@ -19,7 +19,10 @@ it("persists config and rejects an invalid key", async () => {
       model: "gemini-1.5-flash",
       api_key: "invalid",
     }),
-  ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("invalid API key") });
+  ).resolves.toMatchObject({
+    success: false,
+    message: expect.stringContaining("invalid API key"),
+  });
 });
 
 it("healthchecks a target", async () => {

@@ -2,12 +2,16 @@ import { ApiError } from "./errors";
 
 const API_BASE = "/api";
 
-type ErrorEnvelope = { success: false; error: string };
-
-function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { success?: unknown; error?: unknown };
-  return candidate.success === false && typeof candidate.error === "string";
+function errorEnvelopeMessage(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as { error?: unknown; message?: unknown; success?: unknown };
+  if (candidate.error === true && typeof candidate.message === "string") {
+    return candidate.message;
+  }
+  if (candidate.success === false && typeof candidate.error === "string") {
+    return candidate.error;
+  }
+  return null;
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -40,11 +44,14 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   }
 
   if (!response.ok) {
-    const message = isErrorEnvelope(payload)
-      ? payload.error
-      : response.status === 502 || response.status === 503 || response.status === 504
+    const envelope = errorEnvelopeMessage(payload);
+    const message =
+      envelope ??
+      (response.status === 502 || response.status === 503 || response.status === 504
         ? "Không kết nối được máy chủ"
-        : `HTTP ${response.status}`;
+        : (response.headers.get("Content-Type") ?? "").startsWith("text/plain") && text.trim()
+          ? text.trim()
+          : `HTTP ${response.status}`);
     throw new ApiError(response.status, message, payload);
   }
 

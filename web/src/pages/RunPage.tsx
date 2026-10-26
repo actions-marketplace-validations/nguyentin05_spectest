@@ -160,9 +160,13 @@ export function RunPage() {
     setCancelling(true);
     setCancelError(null);
     try {
-      await api.cancelRun();
-      setCancelRequested(true);
+      const result = await api.cancelRun();
       setConfirmOpen(false);
+      if (!result.success) {
+        setCancelError(result.message || "Không hủy được phiên chạy");
+        return;
+      }
+      setCancelRequested(true);
     } catch (cause) {
       setConfirmOpen(false);
       setCancelError(
@@ -209,7 +213,7 @@ export function RunPage() {
       />
     );
   } else if (reportState.report) {
-    reportContent = <ReportTable records={reportState.report.records} />;
+    reportContent = <ReportTable results={reportState.report.results} />;
   } else {
     reportContent = (
       <EmptyState

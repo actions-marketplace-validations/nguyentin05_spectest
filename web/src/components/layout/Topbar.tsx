@@ -1,5 +1,4 @@
 import { useLocation } from "react-router-dom";
-import { isMock } from "../../lib/mode";
 import { Button } from "../ui/Button";
 import { NAV_ITEMS } from "./Sidebar";
 
@@ -72,9 +71,6 @@ export function Topbar({ navOpen, onToggleNav, onOpenLogs }: TopbarProps) {
           </svg>
           <span className="st-topbar__logs-label">Nhật ký</span>
         </Button>
-        <span className={isMock ? "st-mode-chip is-mock" : "st-mode-chip is-real"}>
-          {isMock ? "Chế độ mẫu" : "Backend thật"}
-        </span>
       </div>
     </header>
   );

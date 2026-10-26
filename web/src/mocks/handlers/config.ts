@@ -4,7 +4,7 @@ import { maskMiddle } from "../../lib/format";
 import { appendLog, mockState, sleep } from "../store";
 
 function badRequest(message: string) {
-  return HttpResponse.json({ success: false, error: message }, { status: 400 });
+  return HttpResponse.json({ error: true, message }, { status: 400 });
 }
 
 export const configHandlers = [
@@ -22,9 +22,9 @@ export const configHandlers = [
       return badRequest("provider, endpoint and model are required");
     }
 
-    mockState.config.provider = body.provider;
-    mockState.config.endpoint = body.endpoint;
-    mockState.config.model = body.model;
+    mockState.config.default_provider = body.provider;
+    mockState.config.endpoint_url = body.endpoint;
+    mockState.config.active_model = body.model;
 
     if (body.api_key) {
       mockState.config.has_api_key = true;
@@ -53,23 +53,18 @@ export const configHandlers = [
     }
 
     if (body.api_key === "invalid") {
-      return HttpResponse.json(
-        {
-          success: false,
-          latency_ms: 210,
-          error: "LLM ping failed: 401 Unauthorized - invalid API key",
-        },
-        { status: 400 },
-      );
+      return HttpResponse.json({
+        success: false,
+        message: "LLM connection check failed: invalid API key",
+      });
     }
 
     appendLog(`LLM connection tested: ${body.provider}/${body.model}`);
     return HttpResponse.json({
       success: true,
-      latency_ms: 482,
       provider: body.provider,
       model: body.model,
-      message: `Connection to ${body.provider} succeeded`,
+      message: "Connection to LLM provider succeeded",
     });
   }),
 ];
