@@ -4,7 +4,7 @@
 package generate
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,6 +20,7 @@ type options struct {
 	apiValues []string
 	reqPath   string
 	outputDir string
+	mode      string
 	dryRun    bool
 }
 
@@ -27,7 +28,7 @@ type options struct {
 // wired yet: this skeleton validates flags and reports that generation is not
 // implemented, without resolving an LLM provider or touching the filesystem.
 func NewCommand(f *cmdutil.Factory) *cobra.Command {
-	opts := &options{outputDir: "./tests"}
+	opts := &options{outputDir: "./tests", mode: "init"}
 
 	cmd := &cobra.Command{
 		Use:     "generate",
@@ -40,7 +41,7 @@ The command manages spectest.yaml, spectest.log.yaml, and spectest.track.yaml to
 		Example: `  spectest generate --api auth=openapi-auth.yaml --api order=openapi-order.yaml
   spectest generate -a auth=openapi.yaml -r requirements.md -o ./tests --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGenerate(opts, f)
+			return runGenerate(cmd, opts, f)
 		},
 	}
 
@@ -50,13 +51,32 @@ The command manages spectest.yaml, spectest.log.yaml, and spectest.track.yaml to
 		"Path to raw business requirements (markdown)")
 	cmd.Flags().StringVarP(&opts.outputDir, "output", "o", opts.outputDir,
 		"Directory containing spectest.yaml, spectest.log.yaml, and spectest.track.yaml")
+	cmd.Flags().StringVar(&opts.mode, "mode", opts.mode,
+		"Generation mode: init or update")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false,
 		"Run the full pipeline but write no files")
 
 	return cmd
 }
 
-func runGenerate(opts *options, f *cmdutil.Factory) error {
+func validateMode(mode string) error {
+	switch mode {
+	case "init":
+		return nil
+	case "update":
+		return errors.New("update mode is not implemented yet; use --mode init")
+	default:
+		return fmt.Errorf("invalid --mode %q: must be init or update", mode)
+	}
+}
+
+func runGenerate(cmd *cobra.Command, opts *options, f *cmdutil.Factory) error {
+	if err := cmd.Context().Err(); err != nil {
+		return err
+	}
+	if err := validateMode(opts.mode); err != nil {
+		return err
+	}
 	if len(opts.apiValues) == 0 {
 		return fmt.Errorf("required flag --api (-a) is missing")
 	}
@@ -76,15 +96,15 @@ func runGenerate(opts *options, f *cmdutil.Factory) error {
 	loader := sources.NewLoader()
 	gen := usecasegenerate.NewGenerator(llmSvc, loader, f.SuiteStore(), realClock{})
 
-	_, err = gen.Execute(context.Background(), usecasegenerate.Request{
+	_, err = gen.Execute(cmd.Context(), usecasegenerate.Request{
 		APIs:             inputs,
 		RequirementsPath: opts.reqPath,
 		OutputDir:        opts.outputDir,
 		DryRun:           opts.dryRun,
+		Concurrency:      1,
 	})
 	return err
 }
-
 
 type realClock struct{}
 
