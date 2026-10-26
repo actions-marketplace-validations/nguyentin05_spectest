@@ -131,11 +131,13 @@ Rules:
 // ============================================================================
 
 type promptAPI struct {
-	Key         string              `json:"key"`
-	Method      string              `json:"method"`
-	Path        string              `json:"path"`
-	Description string              `json:"description,omitempty"`
-	Sig         domain.APISignature `json:"sig"`
+	Key         string                   `json:"key"`
+	Method      string                   `json:"method"`
+	Path        string                   `json:"path"`
+	Description string                   `json:"description,omitempty"`
+	Sig         domain.APISignature      `json:"sig"`
+	Request     *domain.RequestSpec      `json:"request,omitempty"`
+	Responses   map[string]domain.Schema `json:"responses,omitempty"`
 }
 
 type promptAPILite struct {
@@ -173,7 +175,12 @@ type promptSetupRef struct {
 func promptAPIsFromSlice(apis []domain.API) []promptAPI {
 	out := make([]promptAPI, 0, len(apis))
 	for _, a := range apis {
-		out = append(out, promptAPI{Key: a.Key, Method: a.Method, Path: a.Path, Description: a.Description, Sig: a.Sig})
+		out = append(out, promptAPI{
+			Key: a.Key, Method: a.Method, Path: a.Path,
+			Description: a.Description, Sig: a.Sig,
+			Request:   a.Request,
+			Responses: a.Responses,
+		})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
@@ -277,8 +284,10 @@ func buildGlobalPrompt(in *planInput) (string, string, error) {
 		Groups           []promptGroup `json:"groups"`
 		Notes            []promptNote  `json:"notes,omitempty"`
 		SourceWarnings   []string      `json:"source_warnings,omitempty"`
-	}{"global_plan", string(in.Src.Input), in.Src.Servers, in.hasReq, prefixes, groups,
-		promptNotesFrom(in.Notes), in.warningMessages()})
+	}{
+		"global_plan", string(in.Src.Input), in.Src.Servers, in.hasReq, prefixes, groups,
+		promptNotesFrom(in.Notes), in.warningMessages(),
+	})
 	if err != nil {
 		return "", "", err
 	}
