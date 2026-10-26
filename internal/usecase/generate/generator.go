@@ -42,6 +42,7 @@ type Request struct {
 // Result is what the CLI prints.
 type Result struct {
 	Mode           Mode
+	Input          domain.InputMode
 	Servers        []string
 	APITotal       int
 	Warnings       []string
@@ -182,6 +183,7 @@ func (g *Generator) Execute(ctx context.Context, req Request) (*Result, error) {
 
 	return &Result{
 		Mode:           ModeInitial,
+		Input:          src.Input,
 		Servers:        src.Servers,
 		APITotal:       len(src.APIs),
 		Warnings:       uniqueWarns,

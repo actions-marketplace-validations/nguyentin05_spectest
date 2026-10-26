@@ -100,14 +100,18 @@ func runGenerate(cmd *cobra.Command, opts *options, f *cmdutil.Factory) error {
 	loader := sources.NewLoader()
 	gen := usecasegenerate.NewGenerator(llmSvc, loader, f.SuiteStore(), realClock{})
 
-	_, err = gen.Execute(cmd.Context(), usecasegenerate.Request{
+	res, err := gen.Execute(cmd.Context(), usecasegenerate.Request{
 		APIs:             inputs,
 		RequirementsPath: opts.reqPath,
 		OutputDir:        opts.outputDir,
 		DryRun:           opts.dryRun,
 		Concurrency:      1,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	printSummary(cmd.OutOrStdout(), res)
+	return nil
 }
 
 type realClock struct{}
