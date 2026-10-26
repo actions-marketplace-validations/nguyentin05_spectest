@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { RunReport } from "../api/types";
@@ -148,6 +148,39 @@ it("asks for a suite before running when none exists", async () => {
     within(title.parentElement!).getByRole("link", { name: "Sinh kịch bản" }),
   ).toHaveAttribute("href", "/generate");
   expect(screen.queryByText("Backend chưa hỗ trợ cấu hình chạy.")).not.toBeInTheDocument();
+});
+
+it("defaults the suite to the plan path when the workspace does not list it", async () => {
+  let sentSuite = "";
+  server.use(
+    http.get("/api/specs/workspace", () =>
+      HttpResponse.json({ current_dir: "", items: [] }),
+    ),
+    http.get("/api/specs/plan", () =>
+      HttpResponse.json({ path: "custom/plan.yaml", servers: ["auth"] }),
+    ),
+    http.post("/api/run", async ({ request }) => {
+      const body = (await request.json()) as { suite_path: string };
+      sentSuite = body.suite_path;
+      return HttpResponse.json({
+        run_id: "run-custom",
+        status: "running",
+        message: "",
+        target_url: "",
+        suite_path: body.suite_path,
+      });
+    }),
+  );
+
+  renderAt("/run");
+
+  expect(await screen.findByLabelText("Suite")).toHaveValue("custom/plan.yaml");
+  await userEvent.type(
+    screen.getByLabelText("Địa chỉ máy chủ đích"),
+    "http://localhost:8080",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Bắt đầu chạy" }));
+  await waitFor(() => expect(sentSuite).toBe("custom/plan.yaml"));
 });
 
 it("explains when the backend cannot load the run configuration", async () => {

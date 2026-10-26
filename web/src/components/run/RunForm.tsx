@@ -32,7 +32,7 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
   const workspace = useApi(api.workspace);
   const plan = useApi(api.plan);
 
-  const [suitePath, setSuitePath] = useState("tests/spectest.yaml");
+  const [suitePath, setSuitePath] = useState("");
   const [mode, setMode] = useState<TargetMode>("single");
   const [targetUrl, setTargetUrl] = useState("");
   const [perServer, setPerServer] = useState<Record<string, string>>({});
@@ -76,6 +76,8 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
 
   const suiteItems = (workspace.data?.items ?? []).filter((item) => item.type === "suite");
   const servers = plan.data?.servers ?? [];
+  const planPath = plan.data?.path ?? "";
+  const selectedSuite = suitePath || planPath || suiteItems[0]?.name || "";
 
   function currentTargets(): string[] {
     if (mode === "single") return [targetUrl.trim()];
@@ -133,7 +135,7 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
     }
 
     const body: RunRequest = {
-      suite_path: suitePath,
+      suite_path: selectedSuite,
       timeout_seconds: seconds,
       ...(mode === "single"
         ? { target_url: targets[0] }
@@ -163,9 +165,12 @@ export function RunForm({ onStarted }: { onStarted: (runId: string) => void }) {
     >
       <form className="st-run-form" onSubmit={(event) => void submit(event)}>
         <Field id="run-suite" label="Suite">
-          <select value={suitePath} onChange={(event) => setSuitePath(event.target.value)}>
-            {suiteItems.length === 0 && (
-              <option value="tests/spectest.yaml">tests/spectest.yaml</option>
+          <select
+            value={selectedSuite}
+            onChange={(event) => setSuitePath(event.target.value)}
+          >
+            {planPath && !suiteItems.some((item) => item.name === planPath) && (
+              <option value={planPath}>{planPath}</option>
             )}
             {suiteItems.map((item) => (
               <option key={item.path} value={item.name}>
