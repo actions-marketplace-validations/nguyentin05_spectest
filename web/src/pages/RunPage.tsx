@@ -24,6 +24,7 @@ type ReportState = {
   report: RunReport | null;
   error: Error | null;
   loading: boolean;
+  settled: boolean;
   reload: () => void;
 };
 
@@ -80,14 +81,16 @@ function useRunReport(runId: string, endEvent: EndEvent | undefined): ReportStat
   const [report, setReport] = useState<RunReport | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(false);
+  const [settled, setSettled] = useState(false);
   const [version, setVersion] = useState(0);
-  const key = endEvent ? `${runId}:${endEvent.timestamp}` : "";
+  const key = runId ? `${runId}:${endEvent?.timestamp ?? "start"}` : "";
 
   useEffect(() => {
     if (!key) {
       setReport(null);
       setError(null);
       setLoading(false);
+      setSettled(false);
       return;
     }
 
@@ -99,11 +102,13 @@ function useRunReport(runId: string, endEvent: EndEvent | undefined): ReportStat
         if (!active) return;
         setReport(result);
         setLoading(false);
+        setSettled(true);
       },
       (cause: unknown) => {
         if (!active) return;
         setError(cause instanceof Error ? cause : new Error(String(cause)));
         setLoading(false);
+        setSettled(true);
       },
     );
 
@@ -116,6 +121,7 @@ function useRunReport(runId: string, endEvent: EndEvent | undefined): ReportStat
     report,
     error,
     loading,
+    settled,
     reload: () => setVersion((current) => current + 1),
   };
 }
@@ -130,15 +136,26 @@ export function RunPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelRequested, setCancelRequested] = useState(false);
 
+  const startEvent = events.find(
+    (event): event is StartEvent => event.type === "start",
+  );
+  const endEvent = findEndEvent(events);
+  const reportState = useRunReport(runId, endEvent);
+  const currentReport = reportState.report?.id === runId ? reportState.report : null;
+  const restored = Boolean(
+    runId && currentReport && currentReport.status !== "running",
+  );
+
   useEffect(() => {
     setConfirmOpen(false);
     setCancelError(null);
     setCancelRequested(false);
-    if (!runId) return;
+    if (!runId || !reportState.settled) return;
     clear();
+    if (restored) return;
     start();
     return () => stop();
-  }, [runId, clear, start, stop]);
+  }, [runId, reportState.settled, restored, clear, start, stop]);
 
   useEffect(() => {
     const element = streamRef.current;
@@ -149,15 +166,9 @@ export function RunPage() {
     }
   }, [events]);
 
-  const startEvent = events.find(
-    (event): event is StartEvent => event.type === "start",
-  );
-  const endEvent = findEndEvent(events);
   const total = startEvent?.data.total_scenarios ?? 0;
   const { done, passed, failed } = scenarioCounts(events);
   const elapsed = useElapsed(events);
-  const reportState = useRunReport(runId, endEvent);
-
   async function confirmCancel() {
     setCancelling(true);
     setCancelError(null);
@@ -179,37 +190,52 @@ export function RunPage() {
     }
   }
 
+  const finishedStatus =
+    endEvent?.type === "cancelled"
+      ? "cancelled"
+      : endEvent?.type === "error"
+        ? "failed"
+        : endEvent
+          ? "passed"
+          : currentReport && currentReport.status !== "running"
+            ? currentReport.status
+            : null;
+
   const statusLabel = error
     ? "Mất kết nối"
-    : endEvent
-      ? endEvent.type === "cancelled"
-        ? "Đã hủy"
-        : endEvent.type === "error"
-          ? "Lỗi"
-          : "Hoàn tất"
-      : connected
-        ? "Đang chạy"
-        : "Đã dừng";
+    : finishedStatus === "cancelled"
+      ? "Đã hủy"
+      : finishedStatus === "failed"
+        ? "Lỗi"
+        : finishedStatus
+          ? "Hoàn tất"
+          : connected
+            ? "Đang chạy"
+            : "Đã dừng";
   const statusTone = error
     ? "fail"
-    : endEvent
-      ? endEvent.type === "cancelled"
-        ? "skip"
-        : endEvent.type === "error"
-          ? "fail"
-          : "pass"
-      : connected
-        ? "live"
-        : "skip";
+    : finishedStatus === "cancelled"
+      ? "skip"
+      : finishedStatus === "failed"
+        ? "fail"
+        : finishedStatus
+          ? "pass"
+          : connected
+            ? "live"
+            : "skip";
 
   let reportContent: ReactNode;
-  if (reportState.loading && !reportState.report) {
+  if (reportState.loading && !currentReport) {
     reportContent = <LoadingBlock label="Đang tải báo cáo…" rows={4} />;
   } else if (reportState.error) {
     reportContent = isMissingEndpoint(reportState.error) ? (
       <EmptyState
         title="Chưa có báo cáo chi tiết"
-        description="Máy chủ chưa trả về báo cáo cho lần chạy này."
+        description={
+          endEvent || restored
+            ? "Máy chủ chưa trả về báo cáo cho lần chạy này."
+            : "Báo cáo sẽ có sau khi phiên chạy kết thúc."
+        }
       />
     ) : (
       <ErrorState
@@ -218,8 +244,8 @@ export function RunPage() {
         onRetry={reportState.reload}
       />
     );
-  } else if (reportState.report) {
-    reportContent = <ReportTable results={reportState.report.results} />;
+  } else if (currentReport) {
+    reportContent = <ReportTable results={currentReport.results} />;
   } else {
     reportContent = (
       <EmptyState
@@ -246,7 +272,7 @@ export function RunPage() {
           </div>
           <div className="st-run-live__actions">
             <Badge tone={statusTone}>{statusLabel}</Badge>
-            {!endEvent && !cancelRequested && (
+            {!endEvent && !restored && !cancelRequested && (
               <Button
                 variant="danger"
                 size="sm"
@@ -308,7 +334,7 @@ export function RunPage() {
           </div>
         )}
 
-        {reportState.report && <RunSummary report={reportState.report} />}
+        {currentReport && <RunSummary report={currentReport} />}
 
         <Tabs
           label="Nội dung phiên chạy"

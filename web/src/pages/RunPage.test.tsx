@@ -70,6 +70,7 @@ it("streams a run and shows every step on the signal spine", async () => {
 });
 
 it("shows step errors and AI diagnosis from the real stream", async () => {
+  let reportCalls = 0;
   server.use(
     http.get("/api/run/stream", () =>
       streamEvents([
@@ -121,7 +122,12 @@ it("shows step errors and AI diagnosis from the real stream", async () => {
         },
       ]),
     ),
-    http.get("/api/run/report", () => HttpResponse.json(failedReport)),
+    http.get("/api/run/report", () => {
+      reportCalls += 1;
+      return reportCalls === 1
+        ? HttpResponse.json({ error: true, message: "no report yet" }, { status: 404 })
+        : HttpResponse.json(failedReport);
+    }),
   );
 
   renderAt("/run?run=run-test");
@@ -131,7 +137,27 @@ it("shows step errors and AI diagnosis from the real stream", async () => {
   expect(await screen.findByText("Hoàn tất · 0/1 kịch bản đạt")).toBeInTheDocument();
 });
 
+it("restores the report instead of streaming a finished run", async () => {
+  let streamCalls = 0;
+  server.use(
+    http.get("/api/run/stream", () => {
+      streamCalls += 1;
+      return streamEvents([]);
+    }),
+    http.get("/api/run/report", () => HttpResponse.json(failedReport)),
+  );
+
+  renderAt("/run?run=run-test");
+
+  const summary = await screen.findByLabelText("Tóm tắt lần chạy");
+  expect(within(summary).getByText("0/1")).toBeInTheDocument();
+  expect(streamCalls).toBe(0);
+  expect(screen.queryByRole("button", { name: "Hủy phiên chạy" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Đang chạy")).not.toBeInTheDocument();
+});
+
 it("treats a failed run as finished and shows its report", async () => {
+  let reportCalls = 0;
   server.use(
     http.get("/api/run/stream", () =>
       streamEvents([
@@ -153,7 +179,12 @@ it("treats a failed run as finished and shows its report", async () => {
         },
       ]),
     ),
-    http.get("/api/run/report", () => HttpResponse.json(failedReport)),
+    http.get("/api/run/report", () => {
+      reportCalls += 1;
+      return reportCalls === 1
+        ? HttpResponse.json({ error: true, message: "no report yet" }, { status: 404 })
+        : HttpResponse.json(failedReport);
+    }),
   );
 
   renderAt("/run?run=run-test");
