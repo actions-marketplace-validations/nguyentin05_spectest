@@ -346,7 +346,7 @@ it("shows the server message when a run cannot be cancelled", async () => {
   await userEvent.click(await screen.findByRole("button", { name: "Hủy phiên chạy" }));
   await userEvent.click(await screen.findByRole("button", { name: "Xác nhận hủy" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "no active test run is in progress",
+    "Không có phiên chạy nào đang diễn ra.",
   );
   expect(
     screen.queryByText("Phiên chạy đã dừng theo yêu cầu."),

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { RunReport, RunStreamEvent } from "../api/types";
 import { api } from "../api/endpoints";
-import { isMissingEndpoint } from "../api/errors";
+import { isMissingEndpoint, translateBackendError } from "../api/errors";
 import { useRunStream } from "../hooks/useRunStream";
 import { formatDurationMs } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
@@ -176,7 +176,9 @@ export function RunPage() {
       const result = await api.cancelRun();
       setConfirmOpen(false);
       if (!result.success) {
-        setCancelError(result.message || "Không hủy được phiên chạy");
+        setCancelError(
+          translateBackendError(result.message || "Không hủy được phiên chạy"),
+        );
         return;
       }
       setCancelRequested(true);
