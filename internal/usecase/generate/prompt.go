@@ -91,7 +91,7 @@ Rules:
   * seed vars: dotted form {{seedName.varName}}. Never use the bare form for seed vars.
   * names saved by earlier steps or by "dependencies": bare {{saveName}}.
   * this setup's own vars: bare {{varName}}.
-- "save": {"body.x": "name"} or {"header.x": "name"} exposes a response value. Save names are unique.
+- "save" maps a variable name to a response expression: {"order_id": "body.id"} or {"token": "header.x"}. Save names are unique.
 - A body must contain every required field of the API. "expect" is the HTTP status (>= 100) and must be a status the API documents when it documents any.
 - Use "notes" and "assumptions" for business rules and data; do not invent values that are in neither.` + dataRule
 
@@ -110,6 +110,7 @@ Rules:
   * seed vars: dotted form {{seedName.varName}}. Never use the bare form for seed vars.
   * names saved by that scenario's "setup_closure" or by its own earlier steps: bare {{saveName}}.
 - A body must contain every required field of the API. "expect" is the HTTP status (>= 100) and must be a documented status when the API documents any.
+- "save" maps a variable name to a response expression: {"order_id": "body.id"} or {"token": "header.x"}. The name must be unique in the scenario and is available to later steps as a bare {{name}}.
 - If "must_call" is present, the scenario MUST call each listed API.
 - Use "notes" and "assumptions" for business rules and data; do not invent values that are in neither.` + dataRule
 
@@ -290,15 +291,15 @@ func buildGlobalPrompt(in *planInput) (string, string, error) {
 
 func buildOutlinePrompt(c *outlineCtx, gr apiGroup, hints []string) (string, string, error) {
 	user, err := marshalPayload(struct {
-		Mode        string               `json:"mode"`
-		Group       promptGroup          `json:"group"`
-		Prefix      string               `json:"local_setup_prefix"`
+		Mode        string                 `json:"mode"`
+		Group       promptGroup            `json:"group"`
+		Prefix      string                 `json:"local_setup_prefix"`
 		Seed        map[string]domain.Seed `json:"seed,omitempty"`
-		Common      []promptSetupOutline `json:"common_setups,omitempty"`
-		Notes       []promptNote         `json:"notes,omitempty"`
-		Assumptions []assumption         `json:"assumptions,omitempty"`
-		Warnings    []string             `json:"source_warnings,omitempty"`
-		FixRequired []string             `json:"fix_required,omitempty"`
+		Common      []promptSetupOutline   `json:"common_setups,omitempty"`
+		Notes       []promptNote           `json:"notes,omitempty"`
+		Assumptions []assumption           `json:"assumptions,omitempty"`
+		Warnings    []string               `json:"warnings,omitempty"`
+		FixRequired []string               `json:"fix_required,omitempty"`
 	}{
 		"outline_group",
 		promptGroup{ID: gr.ID, Resource: gr.Resource, APIs: promptAPIsFromSlice(gr.APIs)},

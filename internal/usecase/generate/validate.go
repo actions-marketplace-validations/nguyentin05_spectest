@@ -30,12 +30,12 @@ func (r validationResult) Err() error {
 }
 
 var (
-	validateServerRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
-	validateIDRe     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	validateNameRe   = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-	validateAPIKeyRe = regexp.MustCompile(`^[A-Z]+ \{[a-z][a-z0-9_-]*\}/.*$`)
-	validateSaveRe   = regexp.MustCompile(`^(body|header)\..+$`)
-	templateRe       = regexp.MustCompile(`\{\{([a-zA-Z_][a-zA-Z0-9_.]*)\}\}`)
+	validateServerRe   = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	validateIDRe       = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	validateNameRe     = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	validateAPIKeyRe   = regexp.MustCompile(`^[A-Z]+ \{[a-z][a-z0-9_-]*\}/.*$`)
+	validateSaveExprRe = regexp.MustCompile(`^(body|header)\..+$`)
+	templateRe         = regexp.MustCompile(`\{\{([a-zA-Z_][a-zA-Z0-9_.]*)\}\}`)
 )
 
 // validateSuite runs the full v1 rule set.
@@ -321,13 +321,14 @@ func validateStepsDeep(
 			errs = append(errs, fmt.Errorf("%s: step %d: expect must be > 0", owner, idx))
 		}
 
-		// save key format + name uniqueness within this entity
-		for saveKey, saveName := range st.Save {
-			if !validateSaveRe.MatchString(saveKey) {
-				errs = append(errs, fmt.Errorf("%s: step %d: save key %q must be body.x or header.x", owner, idx, saveKey))
+		// save maps a variable name to a body.x / header.x extraction expression.
+		for saveName, expression := range st.Save {
+			if !validateSaveExprRe.MatchString(expression) {
+				errs = append(errs, fmt.Errorf("%s: step %d: save expression %q for %q must be body.x or header.x", owner, idx, expression, saveName))
+				continue
 			}
 			if strings.TrimSpace(saveName) == "" {
-				errs = append(errs, fmt.Errorf("%s: step %d: save name for %q is empty", owner, idx, saveKey))
+				errs = append(errs, fmt.Errorf("%s: step %d: save name for %q is empty", owner, idx, saveName))
 				continue
 			}
 			if _, dup := seenSaves[saveName]; dup {
@@ -380,7 +381,7 @@ func validateStepsDeep(
 		errs = append(errs, validateStatus(owner, idx, st.Expect, api.Responses)...)
 
 		// Add saves to scope for subsequent steps
-		for _, saveName := range st.Save {
+		for saveName := range st.Save {
 			if strings.TrimSpace(saveName) != "" {
 				currentScope[saveName] = struct{}{}
 			}
