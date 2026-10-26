@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:real": "vite --mode real",
     "build": "vite build",
-    "build:real": "vite build --mode real",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest",
@@ -34,10 +32,5 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^4.1.12"
-  },
-  "msw": {
-    "workerDirectory": [
-      "public"
-    ]
   }
 }
