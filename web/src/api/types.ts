@@ -86,7 +86,7 @@ export type PlanStep = {
 };
 
 export type PlanSetup = {
-  vars?: Record<string, string>;
+  vars?: Record<string, unknown>;
   use?: string[];
   steps: PlanStep[];
 };
@@ -109,7 +109,7 @@ export type PlanStats = {
 };
 
 export type PlanSeed = {
-  vars: Record<string, string>;
+  vars: Record<string, unknown>;
 };
 
 export type PlanResponse = {

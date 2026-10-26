@@ -5,7 +5,7 @@ import { Badge } from "../ui/Badge";
 
 type StepListProps = {
   steps: PlanStep[];
-  setupVars?: Record<string, string>;
+  setupVars?: Record<string, unknown>;
 };
 
 export function StepList({ steps, setupVars }: StepListProps) {
