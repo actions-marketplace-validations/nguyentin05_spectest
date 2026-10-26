@@ -105,6 +105,7 @@ export type RawHistoryOpenApiTrigger = {
   added?: string[] | null;
   changed?: string[] | null;
   removed?: string[] | null;
+  restored?: string[] | null;
 };
 
 export type RawHistoryTrigger = {
@@ -113,6 +114,7 @@ export type RawHistoryTrigger = {
 };
 
 export type RawHistoryCreate = {
+  seed?: Record<string, unknown> | null;
   setup?: Record<string, unknown> | null;
   scenarios?: Array<{ id?: string; name?: string }> | null;
 };
@@ -162,6 +164,7 @@ function toHistoryUpdate(raw: RawHistoryUpdate): HistoryUpdate {
               added: openapi.added ?? [],
               changed: openapi.changed ?? [],
               removed: openapi.removed ?? [],
+              restored: openapi.restored ?? [],
             },
           }
         : {}),
@@ -175,6 +178,7 @@ function toHistoryUpdate(raw: RawHistoryUpdate): HistoryUpdate {
         : {}),
     },
     create: {
+      seed_added: Object.keys(create.seed ?? {}),
       setup_added: Object.keys(create.setup ?? {}),
       scenarios_added: (create.scenarios ?? [])
         .map((scenario) => scenario.id ?? scenario.name ?? "")

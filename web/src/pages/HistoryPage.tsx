@@ -84,6 +84,7 @@ function UpdateItem({ update }: { update: HistoryUpdate }) {
               <TriggerGroup label="Thêm" values={openapi.added} tone="brand" />
               <TriggerGroup label="Thay đổi" values={openapi.changed} />
               <TriggerGroup label="Xóa" values={openapi.removed} tone="fail" />
+              <TriggerGroup label="Khôi phục" values={openapi.restored} tone="brand" />
             </>
           )}
           {requirements && (
@@ -99,9 +100,15 @@ function UpdateItem({ update }: { update: HistoryUpdate }) {
         </div>
       )}
 
-      {(update.create.setup_added.length > 0 ||
+      {(update.create.seed_added.length > 0 ||
+        update.create.setup_added.length > 0 ||
         update.create.scenarios_added.length > 0) && (
         <div className="st-history__created">
+          <TriggerGroup
+            label="Seed mới"
+            values={update.create.seed_added}
+            tone="brand"
+          />
           <TriggerGroup
             label="Setup mới"
             values={update.create.setup_added}
@@ -127,6 +134,7 @@ function matches(update: HistoryUpdate, query: string): boolean {
 
   const text = [
     update.note,
+    ...update.create.seed_added,
     ...update.create.setup_added,
     ...update.create.scenarios_added,
     ...update.change.flatMap((change) => [change.target, change.id, change.reason]),
@@ -135,6 +143,7 @@ function matches(update: HistoryUpdate, query: string): boolean {
           ...update.trigger.openapi.added,
           ...update.trigger.openapi.changed,
           ...update.trigger.openapi.removed,
+          ...update.trigger.openapi.restored,
         ]
       : []),
   ]

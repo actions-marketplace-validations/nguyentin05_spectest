@@ -14,6 +14,10 @@ it("renders an update with its trigger and before/after change", async () => {
   expect(screen.getByRole("heading", { name: "Lần cập nhật #1" })).toBeInTheDocument();
   expect(screen.getByText("guest_session")).toBeInTheDocument();
   expect(screen.getByText("order-cancel-pending")).toBeInTheDocument();
+  expect(screen.getByText("Seed mới")).toBeInTheDocument();
+  expect(screen.getByText("admin")).toBeInTheDocument();
+  expect(screen.getByText("Khôi phục")).toBeInTheDocument();
+  expect(screen.getByText("GET {auth}/api/v1/me")).toBeInTheDocument();
 });
 
 it("renders a log that has no updates yet", async () => {

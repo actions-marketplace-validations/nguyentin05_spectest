@@ -1,4 +1,5 @@
-import { toWorkspaceResponse } from "./contracts";
+import { toHistoryResponse, toWorkspaceResponse } from "./contracts";
+import type { RawHistory } from "./contracts";
 import type { WorkspaceResponse } from "./types";
 
 it("marks the evolution log as history when the backend calls it other", () => {
@@ -31,4 +32,21 @@ it("marks the evolution log as history when the backend calls it other", () => {
     "history",
     "other",
   ]);
+});
+
+it("keeps restored operations and seeded variables from the log", () => {
+  const raw: RawHistory = {
+    updates: [
+      {
+        n: 2,
+        trigger: { openapi: { restored: ["GET {auth}/api/v1/me"] } },
+        create: { seed: { admin: { vars: { admin_email: "admin@shop.com" } } } },
+      },
+    ],
+  };
+
+  const update = toHistoryResponse(raw).updates[0]!;
+
+  expect(update.trigger.openapi?.restored).toEqual(["GET {auth}/api/v1/me"]);
+  expect(update.create.seed_added).toEqual(["admin"]);
 });

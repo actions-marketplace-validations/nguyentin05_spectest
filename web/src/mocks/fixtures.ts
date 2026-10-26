@@ -204,6 +204,7 @@ export function createHistoryFixture(): RawHistory {
             added: ["POST {order}/api/orders/{id}/cancel"],
             changed: ["POST {auth}/api/register"],
             removed: [],
+            restored: ["GET {auth}/api/v1/me"],
           },
           requirements: {
             before_hash: "a1b2c3d4e5f6",
@@ -211,6 +212,7 @@ export function createHistoryFixture(): RawHistory {
           },
         },
         create: {
+          seed: { admin: { vars: { admin_email: "admin@shop.com" } } },
           setup: { guest_session: { use: ["login"], steps: [] } },
           scenarios: [{ id: "order-cancel-pending", name: "Hủy đơn đang chờ" }],
         },

@@ -128,6 +128,7 @@ export type HistoryOpenApiTrigger = {
   added: string[];
   changed: string[];
   removed: string[];
+  restored: string[];
 };
 
 export type HistoryRequirementsTrigger = {
@@ -141,6 +142,7 @@ export type HistoryTrigger = {
 };
 
 export type HistoryCreate = {
+  seed_added: string[];
   setup_added: string[];
   scenarios_added: string[];
 };
