@@ -142,9 +142,9 @@ export type HistoryTrigger = {
 };
 
 export type HistoryCreate = {
-  seed_added?: string[];
-  setup_added?: string[];
-  scenarios_added?: string[];
+  seed_added: string[];
+  setup_added: string[];
+  scenarios_added: string[];
 };
 
 export type HistoryChange = {
@@ -160,8 +160,8 @@ export type HistoryUpdate = {
   at: string;
   by: string;
   note: string;
-  trigger?: HistoryTrigger;
-  create?: HistoryCreate;
+  trigger: HistoryTrigger;
+  create: HistoryCreate;
   change?: HistoryChange[];
   after_hash: string;
 };
