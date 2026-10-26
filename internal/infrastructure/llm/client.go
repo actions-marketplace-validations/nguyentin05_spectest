@@ -65,7 +65,7 @@ func (c *Client) Name() string {
 // strips surrounding Markdown code fences if present, and returns the raw JSON string.
 // Transient failures (408/429/5xx, network errors, per-attempt timeouts) are retried
 // with exponential backoff up to maxAttempts.
-func (c *Client) GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, _ interface{}) (string, error) {
+func (c *Client) GenerateStructured(ctx context.Context, systemPrompt string, userPrompt string, _ any) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		raw, retryable, retryAfter, err := c.doRequest(ctx, systemPrompt, userPrompt)
@@ -101,7 +101,7 @@ func (c *Client) doRequest(ctx context.Context, systemPrompt, userPrompt string)
 
 	url := c.endpoint + "/chat/completions"
 
-	reqPayload := map[string]interface{}{
+	reqPayload := map[string]any{
 		"model": c.model,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
@@ -220,10 +220,7 @@ func backoffDelay(attempt int, retryAfter time.Duration) time.Duration {
 		}
 		return retryAfter
 	}
-	d := baseBackoff << (attempt - 1)
-	if d > maxBackoff {
-		d = maxBackoff
-	}
+	d := min(baseBackoff << (attempt - 1), maxBackoff)
 	jitterRange := d / 4
 	if jitterRange <= 0 {
 		return d

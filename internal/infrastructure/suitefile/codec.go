@@ -28,6 +28,10 @@ func decodeSuite(data []byte) (*domain.Suite, error) {
 	if suite.Version != 1 {
 		return nil, fmt.Errorf("%s: expected version: 1, got %d", SuiteFileName, suite.Version)
 	}
+	if !suite.Input.Valid() {
+		return nil, fmt.Errorf("%s: missing or invalid input mode %q; expected %q or %q",
+			SuiteFileName, suite.Input, domain.InputOpenAPI, domain.InputBoth)
+	}
 	return &suite, nil
 }
 
@@ -86,6 +90,9 @@ func decodeTrack(data []byte) (*domain.TrackFile, error) {
 	var track domain.TrackFile
 	if err := decodeStrict(data, &track); err != nil {
 		return nil, fmt.Errorf("%s: invalid schema (expected version: 1): %w", TrackFileName, err)
+	}
+	if !track.Input.Valid() {
+		return nil, fmt.Errorf("%s: missing or invalid input mode %q", TrackFileName, track.Input)
 	}
 	return &track, nil
 }

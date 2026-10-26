@@ -36,7 +36,7 @@ func TestClient_Name(t *testing.T) {
 
 func TestClient_GenerateStructured_Success(t *testing.T) {
 	var gotAuth, gotPath string
-	var gotBody map[string]interface{}
+	var gotBody map[string]any
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
@@ -63,7 +63,7 @@ func TestClient_GenerateStructured_Success(t *testing.T) {
 	if gotBody["model"] != "test-model" {
 		t.Errorf("request model = %v", gotBody["model"])
 	}
-	msgs, _ := gotBody["messages"].([]interface{})
+	msgs, _ := gotBody["messages"].([]any)
 	if len(msgs) != 2 {
 		t.Errorf("expected system + user messages, got %d", len(msgs))
 	}

@@ -4,6 +4,7 @@ package domain
 // OpenAPI and requirements inputs. It is overwritten on every run.
 type TrackFile struct {
 	LastUpdate int                 `yaml:"last_update" json:"last_update"`
+	Input      InputMode           `yaml:"input" json:"input"`
 	Sources    Sources             `yaml:"sources" json:"sources"`
 	APIs       map[string]APIState `yaml:"apis" json:"apis"`
 }
@@ -23,9 +24,10 @@ type FileState struct {
 
 // RequirementState stores the requirements file, normalized hash, and raw text.
 type RequirementState struct {
-	File string `yaml:"file" json:"file"`
-	Hash string `yaml:"hash" json:"hash"`
-	Raw  string `yaml:"raw" json:"raw"`
+	File        string       `yaml:"file" json:"file"`
+	Hash        string       `yaml:"hash" json:"hash"`
+	Raw         string       `yaml:"raw" json:"raw"`
+	APIMentions []APIMention `yaml:"api_mentions,omitempty" json:"api_mentions,omitempty"`
 }
 
 // APIState is the tracked state of one API key. Removed APIs are retained
