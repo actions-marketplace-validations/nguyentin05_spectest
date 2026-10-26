@@ -63,6 +63,36 @@ it("normalizes omitted collections in a sparse plan", async () => {
   expect(plan.scenarios[0]).toMatchObject({ setup: [], locked: false, skip: "" });
 });
 
+it("normalizes a history log without updates", async () => {
+  server.use(
+    http.get("/api/specs/history", () =>
+      HttpResponse.json({
+        path: "tests/spectest.log.yaml",
+        base: {
+          at: "2026-10-26T19:31:42+07:00",
+          by: "ai",
+          after_hash: "7ae58395aa4d",
+          spectest: {
+            servers: ["auth"],
+            apis: ["GET {auth}/health"],
+            scenarios: [{ id: "health-check" }],
+          },
+        },
+        updates: null,
+      }),
+    ),
+  );
+
+  const history = await api.history();
+
+  expect(history.updates).toEqual([]);
+  expect(history.base.spectest_summary).toEqual({
+    servers: ["auth"],
+    apis_count: 1,
+    scenarios_count: 1,
+  });
+});
+
 it("returns documented 404s", async () => {
   await expect(api.plan("missing.yaml")).rejects.toMatchObject({ status: 404 });
   await expect(api.history("missing")).rejects.toMatchObject({ status: 404 });

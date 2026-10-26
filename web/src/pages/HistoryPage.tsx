@@ -202,10 +202,11 @@ export function HistoryPage() {
           <span className="st-history__muted">{updates.length} cập nhật</span>
         </div>
 
-        {updates.length === 0 ? (
+        {data.updates.length === 0 ? (
+          <p className="st-history__empty">Chưa có cập nhật nào.</p>
+        ) : updates.length === 0 ? (
           <p className="st-history__empty">Không có cập nhật phù hợp.</p>
-        ) : (
-          <Timeline
+        ) : (          <Timeline
             label="Lịch sử cập nhật"
             items={updates.map((update) => ({
               id: String(update.n),

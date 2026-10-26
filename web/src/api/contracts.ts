@@ -1,4 +1,8 @@
 import type {
+  HistoryChange,
+  HistoryRequirementsTrigger,
+  HistoryResponse,
+  HistoryUpdate,
   LLMConfig,
   MarkdownResponse,
   PlanResponse,
@@ -93,5 +97,114 @@ export function toPlanResponse(raw: RawPlan): PlanResponse {
       locked_scenarios: raw.stats?.locked_scenarios ?? 0,
       skipped_scenarios: raw.stats?.skipped_scenarios ?? 0,
     },
+  };
+}
+
+export type RawHistoryOpenApiTrigger = {
+  added?: string[] | null;
+  changed?: string[] | null;
+  removed?: string[] | null;
+};
+
+export type RawHistoryTrigger = {
+  openapi?: RawHistoryOpenApiTrigger | null;
+  requirements?: Partial<HistoryRequirementsTrigger> | null;
+};
+
+export type RawHistoryCreate = {
+  setup?: Record<string, unknown> | null;
+  scenarios?: Array<{ id?: string; name?: string }> | null;
+};
+
+export type RawHistoryChange = Partial<HistoryChange>;
+
+export type RawHistoryUpdate = {
+  n?: number;
+  at?: string;
+  by?: string;
+  note?: string;
+  trigger?: RawHistoryTrigger | null;
+  create?: RawHistoryCreate | null;
+  change?: RawHistoryChange[] | null;
+  after_hash?: string;
+};
+
+export type RawHistory = {
+  path?: string;
+  base?: {
+    at?: string;
+    by?: string;
+    after_hash?: string;
+    spectest?: {
+      servers?: string[] | null;
+      apis?: string[] | null;
+      scenarios?: unknown[] | null;
+    } | null;
+  } | null;
+  updates?: RawHistoryUpdate[] | null;
+};
+
+function toHistoryUpdate(raw: RawHistoryUpdate): HistoryUpdate {
+  const openapi = raw.trigger?.openapi;
+  const requirements = raw.trigger?.requirements;
+  const create = raw.create ?? {};
+
+  return {
+    n: raw.n ?? 0,
+    at: raw.at ?? "",
+    by: raw.by ?? "",
+    note: raw.note ?? "",
+    trigger: {
+      ...(openapi
+        ? {
+            openapi: {
+              added: openapi.added ?? [],
+              changed: openapi.changed ?? [],
+              removed: openapi.removed ?? [],
+            },
+          }
+        : {}),
+      ...(requirements
+        ? {
+            requirements: {
+              before_hash: requirements.before_hash ?? "",
+              after_hash: requirements.after_hash ?? "",
+            },
+          }
+        : {}),
+    },
+    create: {
+      setup_added: Object.keys(create.setup ?? {}),
+      scenarios_added: (create.scenarios ?? [])
+        .map((scenario) => scenario.id ?? scenario.name ?? "")
+        .filter(Boolean),
+    },
+    change: (raw.change ?? []).map((change) => ({
+      target: change.target ?? "",
+      id: change.id ?? "",
+      reason: change.reason ?? "",
+      before: change.before,
+      after: change.after,
+    })),
+    after_hash: raw.after_hash ?? "",
+  };
+}
+
+export function toHistoryResponse(raw: RawHistory): HistoryResponse {
+  const base = raw.base ?? {};
+  const suite = base.spectest ?? {};
+
+  return {
+    base: {
+      at: base.at ?? "",
+      by: base.by ?? "",
+      after_hash: base.after_hash ?? "",
+      spectest_summary: {
+        servers: suite.servers ?? [],
+        apis_count: (suite.apis ?? []).length,
+        scenarios_count: (suite.scenarios ?? []).length,
+      },
+    },
+    updates: (raw.updates ?? []).map(toHistoryUpdate),
   };
 }

@@ -1,10 +1,12 @@
 import { withQuery } from "../lib/url";
 import { apiRequest, apiRequestForm } from "./client";
 import {
+  toHistoryResponse,
   toLLMConfig,
   toMarkdownResponse,
   toPlanResponse,
   type RawConfig,
+  type RawHistory,
   type RawMarkdown,
   type RawPlan,
 } from "./contracts";
@@ -19,7 +21,6 @@ import type {
   HealthResponse,
   HealthcheckRequest,
   HealthcheckResponse,
-  HistoryResponse,
   LogsResponse,
   RunReport,
   RunRequest,
@@ -59,7 +60,7 @@ export const api = {
   plan: (path?: string) =>
     apiRequest<RawPlan>(withQuery("/specs/plan", { path })).then(toPlanResponse),
   history: (path?: string) =>
-    apiRequest<HistoryResponse>(withQuery("/specs/history", { path })),
+    apiRequest<RawHistory>(withQuery("/specs/history", { path })).then(toHistoryResponse),
   generate: (body: GenerateRequest) =>
     apiRequest<GenerateResponse | GeneratePendingResponse>("/generate", {
       method: "POST",
