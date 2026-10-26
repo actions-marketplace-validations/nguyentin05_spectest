@@ -1,6 +1,6 @@
 // Package generate implements the `spectest generate` CLI subcommand, which
-// creates or incrementally updates the spectest suite, history log, and track
-// files from one or more OpenAPI documents and optional raw requirements.
+// creates the spectest suite, history log, and track files from one or more
+// OpenAPI documents and optional raw requirements.
 package generate
 
 import (
@@ -24,22 +24,27 @@ type options struct {
 	dryRun    bool
 }
 
-// NewCommand creates the `spectest generate` subcommand. The pipeline is not
-// wired yet: this skeleton validates flags and reports that generation is not
-// implemented, without resolving an LLM provider or touching the filesystem.
+// NewCommand creates the `spectest generate` subcommand. Only init mode is
+// implemented: the command validates flags, confirms before overwriting
+// existing suite files, resolves an LLM provider, and writes a new suite.
+// Update mode is recognized but reports that it is not implemented.
 func NewCommand(f *cmdutil.Factory) *cobra.Command {
 	opts := &options{outputDir: "./tests", mode: "init"}
 
 	cmd := &cobra.Command{
 		Use:     "generate",
-		Short:   "Generate or update the SpecTest suite from OpenAPI and requirements",
+		Short:   "Generate a new SpecTest suite from OpenAPI and requirements",
 		GroupID: "core",
 		Args:    cobra.NoArgs,
-		Long: `Generate the spectest.yaml suite from one or more OpenAPI documents and optional
-raw requirements, or update it incrementally by comparing against spectest.track.yaml.
-The command manages spectest.yaml, spectest.log.yaml, and spectest.track.yaml together.`,
-		Example: `  spectest generate --api auth=openapi-auth.yaml --api order=openapi-order.yaml
-  spectest generate -a auth=openapi.yaml -r requirements.md -o ./tests --dry-run`,
+		Long: `Generate a new spectest.yaml suite from one or more OpenAPI documents and optional
+raw requirements. The command manages spectest.yaml, spectest.log.yaml, and
+spectest.track.yaml together. If any of these files already exist, you must confirm
+before they are overwritten.
+
+Only init mode is implemented. --mode update is reserved and currently reports that
+it is not implemented yet, without reading or writing any files.`,
+		Example: `  spectest generate --mode init --api auth=openapi-auth.yaml --api order=openapi-order.yaml
+  spectest generate --mode init -a auth=openapi.yaml -r requirements.md -o ./tests --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runGenerate(cmd, opts, f)
 		},
