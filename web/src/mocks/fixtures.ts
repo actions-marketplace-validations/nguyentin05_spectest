@@ -49,7 +49,7 @@ export function createWorkspaceFixture(): WorkspaceItem[] {
     {
       name: "tests/spectest.log.yaml",
       path: `${workspaceDir}/tests/spectest.log.yaml`,
-      type: "history",
+      type: "other",
       size: 14210,
     },
   ];

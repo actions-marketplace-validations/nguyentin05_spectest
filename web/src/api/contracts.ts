@@ -11,6 +11,7 @@ import type {
   PlanStats,
   PlanStep,
   PlanSeed,
+  WorkspaceResponse,
 } from "./types";
 
 export type RawConfig = {
@@ -187,6 +188,18 @@ function toHistoryUpdate(raw: RawHistoryUpdate): HistoryUpdate {
       after: change.after,
     })),
     after_hash: raw.after_hash ?? "",
+  };
+}
+
+// Go's workspace walk classifies by file name and misses `spectest.log.yaml`,
+// so the evolution log shows up as "other" and never links to /history.
+export function toWorkspaceResponse(raw: WorkspaceResponse): WorkspaceResponse {
+  return {
+    ...raw,
+    items: raw.items.map((item) => ({
+      ...item,
+      type: /(^|[\\/])spectest\.log\.ya?ml$/i.test(item.name) ? "history" : item.type,
+    })),
   };
 }
 

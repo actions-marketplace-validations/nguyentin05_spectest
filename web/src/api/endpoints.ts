@@ -5,6 +5,7 @@ import {
   toLLMConfig,
   toMarkdownResponse,
   toPlanResponse,
+  toWorkspaceResponse,
   type RawConfig,
   type RawHistory,
   type RawMarkdown,
@@ -46,7 +47,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  workspace: () => apiRequest<WorkspaceResponse>("/specs/workspace"),
+  workspace: () => apiRequest<WorkspaceResponse>("/specs/workspace").then(toWorkspaceResponse),
   uploadFile: (file: File) => {
     const form = new FormData();
     form.append("file", file);
