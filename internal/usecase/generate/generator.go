@@ -153,7 +153,7 @@ func (g *Generator) Execute(ctx context.Context, req Request) (*Result, error) {
 	files := g.buildInitialFileSet(src, suite, mentions)
 
 	// ⑪ PERSIST (Atomic write)
-	writeOpts := domain.WriteOptions{Suite: true, Log: true, Track: true}
+	writeOpts := domain.WriteOptions{Suite: true, Log: true, Track: true, Mode: string(ModeInitial)}
 	if err := g.persist(ctx, req, files, writeOpts); err != nil {
 		return nil, fmt.Errorf("persist: %w", err)
 	}
