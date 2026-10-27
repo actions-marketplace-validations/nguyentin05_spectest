@@ -462,6 +462,11 @@ func matchMentions(ms []domain.APIMention, apis []domain.API) ([]domain.APIMenti
 		warns = append(warns, w)
 	}
 
+	knownServers := make(map[string]struct{})
+	for _, a := range apis {
+		knownServers[a.Server] = struct{}{}
+	}
+
 	out := make([]domain.APIMention, 0, len(ms))
 	for _, m := range ms {
 		m.Method = strings.ToUpper(strings.TrimSpace(m.Method))
@@ -481,10 +486,14 @@ func matchMentions(ms []domain.APIMention, apis []domain.API) ([]domain.APIMenti
 
 		key := m.Method + " " + m.Path
 		servers := map[string]struct{}{}
+		_, serviceIsKnown := knownServers[m.Service]
 		for _, a := range apis {
-			if strings.EqualFold(a.Method, m.Method) && pathsMatch(a.Path, m.Path) &&
-				(m.Service == "" || a.Server == m.Service) {
-				servers[a.Server] = struct{}{}
+			if strings.EqualFold(a.Method, m.Method) && pathsMatch(a.Path, m.Path) {
+				// Match if mention service is empty, there is only one server in spec,
+				// the service name is not a recognized server alias (fallback), or it directly matches.
+				if m.Service == "" || len(knownServers) == 1 || !serviceIsKnown || a.Server == m.Service {
+					servers[a.Server] = struct{}{}
+				}
 			}
 		}
 		switch {
