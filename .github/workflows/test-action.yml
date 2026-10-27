@@ -1,7 +1,13 @@
 name: Test Setup Action
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'action.yml'
+      - '.github/workflows/test-action.yml'
   pull_request:
+    branches: [main]
     paths:
       - 'action.yml'
       - '.github/workflows/test-action.yml'
