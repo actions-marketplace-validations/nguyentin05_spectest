@@ -11,7 +11,7 @@ RUN if [ -f package.json ]; then npm ci; fi
 COPY web/ ./
 RUN if [ -f package.json ]; then npm run build; else mkdir -p dist && touch dist/.gitkeep; fi
 
-FROM --platform=$BUILDPLATFORM golang:1.25.0-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
