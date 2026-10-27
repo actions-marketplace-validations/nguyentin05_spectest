@@ -204,17 +204,11 @@ runs:
           echo "SPECTEST_MODEL=$IN_MODEL" >> "$GITHUB_ENV"
           echo "SPECTEST_ENDPOINT=$IN_ENDPOINT" >> "$GITHUB_ENV"
 
-          CRED_DIR="${HOME}/.spectest"
-          mkdir -p "$CRED_DIR"
-          chmod 700 "$CRED_DIR" 2>/dev/null || true
-          tee "${CRED_DIR}/credentials.yaml" > /dev/null <<EOF
-default_provider: "${IN_PROVIDER}"
-providers:
-  ${IN_PROVIDER}:
-    api_key: "${IN_API_KEY}"
-    model: "${IN_MODEL}"
-    endpoint: "${IN_ENDPOINT}"
-EOF
-          chmod 600 "${CRED_DIR}/credentials.yaml" 2>/dev/null || true
+          spectest config init \
+            --provider "$IN_PROVIDER" \
+            --endpoint "$IN_ENDPOINT" \
+            --model "$IN_MODEL" < /dev/null
+
+          echo "$IN_API_KEY" | spectest config set api-key > /dev/null
           echo "Successfully configured Cloud LLM provider '${IN_PROVIDER}' (model: ${IN_MODEL})."
         fi
