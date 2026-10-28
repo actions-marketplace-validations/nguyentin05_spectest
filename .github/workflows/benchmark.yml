@@ -21,7 +21,7 @@ jobs:
     name: Go Benchmark & Memory Allocation Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v7
