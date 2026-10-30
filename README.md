@@ -235,7 +235,16 @@ Add SpecTest to your MCP settings (`claude_desktop_config.json` or `.cursor/mcp.
 - `read_report`: Retrieve redacted execution reports.
 
 #### Agent Skill
-SpecTest includes an official Agent Skill in **[`skills/spectest/`](skills/spectest/)** coordinating the complete **Prepare → Generate → Run → Analyze** lifecycle with preflight validation (`scripts/preflight.sh`).
+
+Install it into your coding agent (Claude Code, Cursor, Codex, OpenCode, and other agents supported by the [`skills` CLI](https://github.com/vercel-labs/skills)):
+
+```bash
+# Install for the current project
+npx skills add nguyentin05/spectest
+
+# Install globally, available to every project on this machine
+npx skills add nguyentin05/spectest -g
+```
 
 ---
 
